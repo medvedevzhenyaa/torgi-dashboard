@@ -165,6 +165,10 @@
     text-transform:uppercase; letter-spacing:.04em; padding:0 10px 8px; border-bottom:1px solid var(--border);
   }
   thead th.num, td.num{text-align:right;}
+  thead th.sortable{cursor:pointer; user-select:none; white-space:nowrap;}
+  thead th.sortable:hover{color:var(--ink);}
+  thead th.sortable .sort-arrow{display:inline-block; width:9px; margin-left:2px; font-size:9px; color:var(--accent);}
+  thead th.sortable.sort-active{color:var(--ink);}
   tbody td{padding:8px 10px; border-bottom:1px solid var(--grid);}
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:var(--surface-alt);}
@@ -307,9 +311,13 @@
     <div class="p-head"><h2 class="p-title">Марки и модели: полная таблица</h2><span class="p-hint">нажмите на строку, чтобы увидеть сами лоты со ссылками</span></div>
     <div class="tablewrap">
       <table>
-        <thead><tr>
-          <th>Марка и модель</th><th class="num">Лотов</th><th>Доля успеха</th>
-          <th class="num">Медиана старта, ₽</th><th class="num">Медиана сделки, ₽</th><th class="num">Медиана ×</th>
+        <thead><tr id="brand-table-head">
+          <th class="sortable" data-sort-key="label" data-sort-type="text">Марка и модель<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="n" data-sort-type="num">Лотов<span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort-key="share" data-sort-type="num">Доля успеха<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="medStart" data-sort-type="num">Медиана старта, ₽<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="medFin" data-sort-type="num">Медиана сделки, ₽<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="medRatio" data-sort-type="num">Медиана ×<span class="sort-arrow"></span></th>
         </tr></thead>
         <tbody id="brand-table"></tbody>
       </table>
@@ -743,6 +751,16 @@
     });
   }
 
+  var BRAND_SORT = {key:"n", dir:"desc"};
+  function updateBrandSortHeaders(){
+    document.querySelectorAll("#brand-table-head th.sortable").forEach(function(th){
+      var active = th.dataset.sortKey === BRAND_SORT.key;
+      th.classList.toggle("sort-active", active);
+      var arrow = th.querySelector(".sort-arrow");
+      arrow.textContent = active ? (BRAND_SORT.dir === "desc" ? "↓" : "↑") : "";
+    });
+  }
+
   function renderBrandTable(idx){
     // группируем по марке+модели (не только по марке) - иначе Audi A6
     // и Audi Q7 сливались бы в одну строку "Audi" со смешанной ценой
@@ -760,13 +778,28 @@
         if(DATA.price_fin[i]){ e.fins.push(DATA.price_fin[i]); e.ratios.push(DATA.price_fin[i]/DATA.price_start[i]); }
       }
     });
-    var rows = Object.keys(byKey).map(function(k){
+    var allRows = Object.keys(byKey).map(function(k){
       var e = byKey[k];
       return { label:k, brand:e.brand, model:e.model, n:e.n, share: e.n? e.succ/e.n : 0,
                medStart: median(e.starts), medFin: median(e.fins), medRatio: median(e.ratios) };
-    }).sort(function(a,b){return b.n-a.n;}).slice(0,20);
+    });
+    var key = BRAND_SORT.key, dir = BRAND_SORT.dir === "asc" ? 1 : -1;
+    allRows.sort(function(a,b){
+      var av = a[key], bv = b[key];
+      if(key === "label") return dir * String(av).localeCompare(String(bv));
+      // null/отсутствующие медианы - всегда в конец, независимо от направления
+      if(av == null && bv == null) return 0;
+      if(av == null) return 1;
+      if(bv == null) return -1;
+      return dir * (av - bv);
+    });
+    var rows = allRows.slice(0, 20);
+    updateBrandSortHeaders();
 
-    var maxN = rows.length ? rows[0].n : 1;
+    // максимум берём из ПОЛНОГО набора, не только из показанных 20 строк -
+    // иначе при сортировке не по "Лотов" бар-шкала считалась бы от
+    // случайного, а не настоящего максимума
+    var maxN = allRows.length ? Math.max.apply(null, allRows.map(function(r){return r.n;})) : 1;
     var tbody = document.getElementById("brand-table");
     tbody.innerHTML = rows.map(function(r){
       return "<tr data-brand=\""+escapeHtml(r.brand)+"\" data-model=\""+escapeHtml(r.model||"")+"\">"
@@ -1240,6 +1273,21 @@
       render();
       var lotsPanel = document.getElementById("lots-table").closest(".panel");
       if(lotsPanel) lotsPanel.scrollIntoView({behavior: "smooth", block: "start"});
+    });
+
+    // клик по заголовку "Марки и модели" -> сортировка по этой колонке,
+    // повторный клик по тому же заголовку - разворот направления
+    document.getElementById("brand-table-head").addEventListener("click", function(e){
+      var th = e.target.closest("th.sortable");
+      if(!th) return;
+      var key = th.dataset.sortKey;
+      if(BRAND_SORT.key === key){
+        BRAND_SORT.dir = BRAND_SORT.dir === "desc" ? "asc" : "desc";
+      } else {
+        BRAND_SORT.key = key;
+        BRAND_SORT.dir = th.dataset.sortType === "text" ? "asc" : "desc";
+      }
+      renderBrandTable(filteredIdx());
     });
 
     initTabs();
