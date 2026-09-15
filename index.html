@@ -339,7 +339,26 @@
       <h2 class="p-title">Не продались на первых торгах, но потом ушли дороже</h2>
       <span class="p-hint" id="comeback-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">Один и тот же автомобиль (по VIN): 1-й круг — «не продано», один из следующих кругов — продано дороже стартовой цены именно этого 1-го круга. Только достоверный «круг 1» — лоты, впервые появившиеся с середины 2026 года (см. оговорку ниже). Таблица не зависит от фильтров на вкладке «Обзор» — считается по всей базе.</p>
+    <p class="p-hint" style="margin:6px 0 0;">Один и тот же автомобиль (по VIN): 1-й круг — «не продано», один из следующих кругов — продано дороже стартовой цены именно этого 1-го круга. Только достоверный «круг 1» — лоты, впервые появившиеся с середины 2026 года (см. оговорку ниже). Собирается по всей базе, независимо от фильтров на вкладке «Обзор» — свой набор фильтров ниже.</p>
+
+    <div class="filters">
+      <span class="flabel">Марка</span>
+      <select id="cf-brand"><option value="">Все марки</option></select>
+      <span class="flabel">Модель</span>
+      <select id="cf-model"><option value="">Все модели</option></select>
+      <span class="flabel">Год выпуска</span>
+      <select id="cf-year-from"><option value="">от</option></select>
+      <span class="flabel" aria-hidden="true">—</span>
+      <select id="cf-year-to"><option value="">до</option></select>
+      <span class="flabel">Круг продажи</span>
+      <select id="cf-cycle">
+        <option value="">Любой круг</option>
+        <option value="2">2-й</option>
+        <option value="3+">3-й и более</option>
+      </select>
+      <button class="reset" id="cf-reset">Сбросить фильтры</button>
+    </div>
+
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -869,16 +888,53 @@
     return rows;
   }
 
+  function comebackCurrentFilter(){
+    var yf = document.getElementById("cf-year-from").value;
+    var yt = document.getElementById("cf-year-to").value;
+    return {
+      brand: document.getElementById("cf-brand").value,
+      model: document.getElementById("cf-model").value,
+      yearFrom: yf ? Number(yf) : null,
+      yearTo: yt ? Number(yt) : null,
+      cycle: document.getElementById("cf-cycle").value
+    };
+  }
+  function comebackFilteredRows(){
+    var all = COMEBACK_ROWS || [];
+    var f = comebackCurrentFilter();
+    var hasYearFilter = f.yearFrom != null || f.yearTo != null;
+    return all.filter(function(r){
+      if(f.brand && r.brand !== f.brand) return false;
+      if(f.model && r.model !== f.model) return false;
+      if(hasYearFilter){
+        if(r.year == null) return false;
+        if(f.yearFrom != null && r.year < f.yearFrom) return false;
+        if(f.yearTo != null && r.year > f.yearTo) return false;
+      }
+      if(f.cycle){
+        if(f.cycle === "3+"){ if(!r.soldCycle || r.soldCycle < 3) return false; }
+        else if(r.soldCycle !== Number(f.cycle)) return false;
+      }
+      return true;
+    });
+  }
+
   function renderComebackTable(){
-    var rows = COMEBACK_ROWS || [];
-    var hint = rows.length ? fmtInt(rows.length)+" машин" : "не найдено";
-    if(rows.length){
+    var all = COMEBACK_ROWS || [];
+    var rows = comebackFilteredRows();
+    var f = comebackCurrentFilter();
+    var filterActive = !!(f.brand || f.model || f.yearFrom != null || f.yearTo != null || f.cycle);
+    var hint;
+    if(!rows.length){
+      hint = "нет строк по текущему фильтру";
+    } else {
+      hint = filterActive ? fmtInt(rows.length)+" из "+fmtInt(all.length)+" машин" : fmtInt(rows.length)+" машин";
       var med = median(rows.map(function(r){return r.upliftPct;}));
       hint += "  ·  медианный прирост +"+Math.round(med)+"%";
     }
     document.getElementById("comeback-hint").textContent = hint;
     var countBadge = document.getElementById("tab-comeback-count");
-    if(countBadge) countBadge.textContent = rows.length ? " " + fmtInt(rows.length) : "";
+    if(countBadge) countBadge.textContent = all.length ? " " + fmtInt(all.length) : "";
     var tbody = document.getElementById("comeback-table");
     tbody.innerHTML = rows.map(function(r){
       var title = r.model ? escapeHtml(r.brand||"—")+" "+escapeHtml(r.model) : escapeHtml(r.brand||"—");
@@ -895,6 +951,74 @@
         + "<td><a class=\"lot-link\" href=\""+firstUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">1-е торги ↗</a> · <a class=\"lot-link\" href=\""+soldUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">продажа ↗</a></td>"
         + "</tr>";
     }).join("");
+  }
+
+  // марки/модели/года - только из строк самой таблицы (COMEBACK_ROWS),
+  // а не из всей базы, иначе в списке были бы марки без единой строки здесь
+  function populateComebackBrandFilter(){
+    var counts = {};
+    (COMEBACK_ROWS || []).forEach(function(r){ if(!r.brand) return; counts[r.brand]=(counts[r.brand]||0)+1; });
+    var brands = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];});
+    var sel = document.getElementById("cf-brand");
+    sel.innerHTML = "<option value=\"\">Все марки</option>";
+    brands.forEach(function(b){
+      var opt = document.createElement("option");
+      opt.value = b; opt.textContent = b+" ("+counts[b]+")";
+      sel.appendChild(opt);
+    });
+  }
+
+  function populateComebackModelFilter(){
+    var brand = document.getElementById("cf-brand").value;
+    var sel = document.getElementById("cf-model");
+    var prev = sel.value;
+    sel.innerHTML = "";
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = brand ? "Все модели" : "Сначала выберите марку";
+    sel.appendChild(placeholder);
+    sel.disabled = !brand;
+    if(!brand) return;
+
+    var counts = {};
+    (COMEBACK_ROWS || []).forEach(function(r){
+      if(r.brand !== brand || !r.model) return;
+      counts[r.model] = (counts[r.model]||0)+1;
+    });
+    var models = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];});
+    models.forEach(function(m){
+      var opt = document.createElement("option");
+      opt.value = m; opt.textContent = m+" ("+counts[m]+")";
+      sel.appendChild(opt);
+    });
+    if(prev && counts[prev]) sel.value = prev;
+  }
+
+  function populateComebackYearFilter(){
+    var years = {};
+    (COMEBACK_ROWS || []).forEach(function(r){ if(r.year && r.year>=1970 && r.year<=2027) years[r.year]=true; });
+    var sorted = Object.keys(years).map(Number).sort(function(a,b){return a-b;});
+    var selFrom = document.getElementById("cf-year-from");
+    var selTo = document.getElementById("cf-year-to");
+    selFrom.innerHTML = "<option value=\"\">от</option>";
+    selTo.innerHTML = "<option value=\"\">до</option>";
+    sorted.forEach(function(y){
+      var o1 = document.createElement("option"); o1.value = y; o1.textContent = y; selFrom.appendChild(o1);
+      var o2 = document.createElement("option"); o2.value = y; o2.textContent = y; selTo.appendChild(o2);
+    });
+  }
+
+  function onComebackYearFromChange(){
+    var from = document.getElementById("cf-year-from").value;
+    var toSel = document.getElementById("cf-year-to");
+    if(from && toSel.value && Number(toSel.value) < Number(from)) toSel.value = from;
+    renderComebackTable();
+  }
+  function onComebackYearToChange(){
+    var to = document.getElementById("cf-year-to").value;
+    var fromSel = document.getElementById("cf-year-from");
+    if(to && fromSel.value && Number(fromSel.value) > Number(to)) fromSel.value = to;
+    renderComebackTable();
   }
 
   function escapeHtml(s){
@@ -999,6 +1123,9 @@
         "<b>"+fmtInt(d.n)+"</b> реально завершённых лотов (продано или нет), собранных напрямую из API torgi.gov.ru за "+dateRange+" — не стартовые цены из объявлений, а факт исхода торгов.";
       buildModelBenchmark();
       COMEBACK_ROWS = buildComebackRows();
+      populateComebackBrandFilter();
+      populateComebackModelFilter();
+      populateComebackYearFilter();
       renderComebackTable();
       populateBrandFilter();
       populateModelFilter();
@@ -1026,6 +1153,23 @@
       document.getElementById("f-cycle").value = "";
       populateModelFilter();
       render();
+    });
+
+    document.getElementById("cf-brand").addEventListener("change", function(){
+      populateComebackModelFilter(); // список моделей зависит от марки - пересобираем при каждой смене
+      renderComebackTable();
+    });
+    document.getElementById("cf-model").addEventListener("change", renderComebackTable);
+    document.getElementById("cf-year-from").addEventListener("change", onComebackYearFromChange);
+    document.getElementById("cf-year-to").addEventListener("change", onComebackYearToChange);
+    document.getElementById("cf-cycle").addEventListener("change", renderComebackTable);
+    document.getElementById("cf-reset").addEventListener("click", function(){
+      document.getElementById("cf-brand").value = "";
+      document.getElementById("cf-year-from").value = "";
+      document.getElementById("cf-year-to").value = "";
+      document.getElementById("cf-cycle").value = "";
+      populateComebackModelFilter();
+      renderComebackTable();
     });
 
     // клик по строке "Марки и модели" -> подставляем марку/модель в
