@@ -237,6 +237,15 @@
       <option value="2">2-й</option>
       <option value="3+">3-й и более</option>
     </select>
+    <span class="flabel">Год торгов</span>
+    <select id="f-auction-year">
+      <option value="">Любой год</option>
+      <option value="2022">2022</option>
+      <option value="2023">2023</option>
+      <option value="2024">2024</option>
+      <option value="2025">2025</option>
+      <option value="2026">2026</option>
+    </select>
     <button class="reset" id="f-reset">Сбросить фильтры</button>
   </div>
 
@@ -312,6 +321,8 @@
       <h2 class="p-title">Лоты по текущему фильтру</h2>
       <span class="p-hint">
         <select id="lots-sort">
+          <option value="date_desc">сначала недавние торги</option>
+          <option value="date_asc">сначала давние торги</option>
           <option value="price_desc">сначала дороже</option>
           <option value="price_asc">сначала дешевле</option>
           <option value="value_desc">сначала выгоднее медианы</option>
@@ -323,7 +334,7 @@
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th>Марка и модель</th><th>Год</th><th>Статус</th>
+          <th>Марка и модель</th><th>Год</th><th>Статус</th><th>Дата торгов</th>
           <th class="num">Старт, ₽</th><th class="num">Сделка, ₽</th><th class="num">Круг</th>
           <th>Цена vs медиана модели</th><th>Лот</th>
         </tr></thead>
@@ -356,6 +367,22 @@
         <option value="2">2-й</option>
         <option value="3+">3-й и более</option>
       </select>
+      <span class="flabel">Год продажи</span>
+      <select id="cf-auction-year">
+        <option value="">Любой год</option>
+        <option value="2022">2022</option>
+        <option value="2023">2023</option>
+        <option value="2024">2024</option>
+        <option value="2025">2025</option>
+        <option value="2026">2026</option>
+      </select>
+      <span class="flabel">Сортировка</span>
+      <select id="cf-sort">
+        <option value="uplift_desc">сначала больше прирост</option>
+        <option value="date_desc">сначала недавние продажи</option>
+        <option value="date_asc">сначала давние продажи</option>
+        <option value="price_desc">сначала дороже продано</option>
+      </select>
       <button class="reset" id="cf-reset">Сбросить фильтры</button>
     </div>
 
@@ -363,7 +390,8 @@
       <table>
         <thead><tr>
           <th>Марка и модель</th><th class="num">Год</th><th>Регион</th>
-          <th class="num">Старт 1-х торгов, ₽</th><th class="num">Круг продажи</th>
+          <th>Дата 1-х торгов</th><th class="num">Старт 1-х торгов, ₽</th>
+          <th>Дата продажи</th><th class="num">Круг продажи</th>
           <th class="num">Цена продажи, ₽</th><th class="num">Прирост</th><th>Лоты</th>
         </tr></thead>
         <tbody id="comeback-table"></tbody>
@@ -394,6 +422,11 @@
   function fmtInt(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)); }
   function fmtRub(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)) + " ₽"; }
   function fmtRatio(x){ return x.toFixed(2).replace(".", ",") + "×"; }
+  function fmtDate(d){
+    if(!d) return "—";
+    var p = d.split("-");
+    return p.length===3 ? p[2]+"."+p[1]+"."+p[0] : d;
+  }
   function median(arr){
     if(!arr.length) return null;
     var s = arr.slice().sort(function(a,b){return a-b;});
@@ -445,7 +478,8 @@
       status: document.getElementById("f-status").value,
       yearFrom: yf ? Number(yf) : null,
       yearTo: yt ? Number(yt) : null,
-      cycle: document.getElementById("f-cycle").value
+      cycle: document.getElementById("f-cycle").value,
+      auctionYear: document.getElementById("f-auction-year").value
     };
   }
   function filteredIdx(){
@@ -465,6 +499,10 @@
         var c = DATA.cycle[i];
         if(f.cycle === "3+"){ if(!c || c < 3) continue; }
         else if(c !== Number(f.cycle)) continue;
+      }
+      if(f.auctionYear){
+        var m = DATA.month[i];
+        if(!m || m.slice(0,4) !== f.auctionYear) continue;
       }
       idx.push(i);
     }
@@ -504,7 +542,7 @@
     var n = idx.length;
 
     document.getElementById("kpi-n").textContent = fmtInt(n);
-    document.getElementById("kpi-n-note").textContent = (f.brand||f.model||f.status||f.yearFrom!=null||f.yearTo!=null||f.cycle) ? "по текущему фильтру" : "за "+DATA_DATE_RANGE;
+    document.getElementById("kpi-n-note").textContent = (f.brand||f.model||f.status||f.yearFrom!=null||f.yearTo!=null||f.cycle||f.auctionYear) ? "по текущему фильтру" : "за "+DATA_DATE_RANGE;
     var successShare = n ? succeedIdx.length===0 && n>0 ?
         (idx.filter(function(i){return DATA.status[i]==="SUCCEED";}).length/n) :
         (idx.filter(function(i){return DATA.status[i]==="SUCCEED";}).length/n) : 0;
@@ -762,10 +800,13 @@
   function renderLotsTable(idx){
     var sort = document.getElementById("lots-sort").value;
     var rows = idx.slice();
+    function lotDate(i){ return DATA.date_end[i] || DATA.date_start[i] || ""; }
     if(sort === "price_desc") rows.sort(function(a,b){ return DATA.price_start[b]-DATA.price_start[a]; });
     else if(sort === "price_asc") rows.sort(function(a,b){ return DATA.price_start[a]-DATA.price_start[b]; });
     else if(sort === "cycle_desc") rows.sort(function(a,b){ return (DATA.cycle[b]||0)-(DATA.cycle[a]||0); });
     else if(sort === "value_desc") rows.sort(function(a,b){ return valueRatio(a)-valueRatio(b); });
+    else if(sort === "date_asc") rows.sort(function(a,b){ return lotDate(a).localeCompare(lotDate(b)); });
+    else rows.sort(function(a,b){ return lotDate(b).localeCompare(lotDate(a)); }); // date_desc, по умолчанию
 
     var total = rows.length;
     var shown = rows.slice(0, LOTS_CAP);
@@ -811,6 +852,7 @@
         + "<td class=\"brand\">"+title+"</td>"
         + "<td class=\"num\">"+year+"</td>"
         + "<td>"+statusPill+"</td>"
+        + "<td class=\"mono\">"+fmtDate(lotDate(i))+"</td>"
         + "<td class=\"num\">"+start+"</td>"
         + "<td class=\"num\">"+fin+"</td>"
         + "<td class=\"num\">"+cycle+"</td>"
@@ -852,12 +894,26 @@
         if(DATA.price_fin[i] > startPrice && (best==null || DATA.price_fin[i] > DATA.price_fin[best])) best = i;
       });
       if(best==null) return;
+      // та же проверка на аномалию (доля в праве, а не вся машина), что
+      // и в основной таблице лотов - иначе такие лоты с копеечным
+      // "стартом" утаскивали бы себе весь верх сортировки по приросту
+      var rowBrand = DATA.brand[best] || DATA.brand[firstIdx];
+      var rowModel = DATA.model[best] || DATA.model[firstIdx];
+      var bm = getBenchmark(rowBrand, rowModel);
+      if(bm && startPrice / bm.median < 0.10) return;
+      var upliftPctCheck = (DATA.price_fin[best]/startPrice - 1) * 100;
+      // без эталона по марке+модели (нет данных) сверяемся хотя бы
+      // абсолютным потолком - рост в 6+ раз почти всегда означает
+      // ошибку/долю в праве, а не настоящий рыночный интерес
+      if(!bm && upliftPctCheck > 500) return;
+      var firstDate = DATA.date_end[firstIdx] || DATA.date_start[firstIdx];
+      var soldDate = DATA.date_end[best] || DATA.date_start[best];
       rows.push({
         firstIdx: firstIdx, soldIdx: best,
-        brand: DATA.brand[best] || DATA.brand[firstIdx],
-        model: DATA.model[best] || DATA.model[firstIdx],
+        brand: rowBrand, model: rowModel,
         year: DATA.year[best] || DATA.year[firstIdx],
         region: DATA.region[best] || DATA.region[firstIdx],
+        firstDate: firstDate, soldDate: soldDate,
         startPrice: startPrice,
         soldCycle: DATA.cycle[best],
         soldPrice: DATA.price_fin[best],
@@ -876,14 +932,16 @@
       model: document.getElementById("cf-model").value,
       yearFrom: yf ? Number(yf) : null,
       yearTo: yt ? Number(yt) : null,
-      cycle: document.getElementById("cf-cycle").value
+      cycle: document.getElementById("cf-cycle").value,
+      auctionYear: document.getElementById("cf-auction-year").value,
+      sort: document.getElementById("cf-sort").value
     };
   }
   function comebackFilteredRows(){
     var all = COMEBACK_ROWS || [];
     var f = comebackCurrentFilter();
     var hasYearFilter = f.yearFrom != null || f.yearTo != null;
-    return all.filter(function(r){
+    var rows = all.filter(function(r){
       if(f.brand && r.brand !== f.brand) return false;
       if(f.model && r.model !== f.model) return false;
       if(hasYearFilter){
@@ -895,15 +953,24 @@
         if(f.cycle === "3+"){ if(!r.soldCycle || r.soldCycle < 3) return false; }
         else if(r.soldCycle !== Number(f.cycle)) return false;
       }
+      if(f.auctionYear){
+        if(!r.soldDate || r.soldDate.slice(0,4) !== f.auctionYear) return false;
+      }
       return true;
     });
+    rows = rows.slice();
+    if(f.sort === "date_desc") rows.sort(function(a,b){ return (b.soldDate||"").localeCompare(a.soldDate||""); });
+    else if(f.sort === "date_asc") rows.sort(function(a,b){ return (a.soldDate||"").localeCompare(b.soldDate||""); });
+    else if(f.sort === "price_desc") rows.sort(function(a,b){ return b.soldPrice - a.soldPrice; });
+    else rows.sort(function(a,b){ return b.upliftPct - a.upliftPct; });
+    return rows;
   }
 
   function renderComebackTable(){
     var all = COMEBACK_ROWS || [];
     var rows = comebackFilteredRows();
     var f = comebackCurrentFilter();
-    var filterActive = !!(f.brand || f.model || f.yearFrom != null || f.yearTo != null || f.cycle);
+    var filterActive = !!(f.brand || f.model || f.yearFrom != null || f.yearTo != null || f.cycle || f.auctionYear);
     var hint;
     if(!rows.length){
       hint = "нет строк по текущему фильтру";
@@ -924,7 +991,9 @@
         + "<td class=\"brand\">"+title+"</td>"
         + "<td class=\"num\">"+(r.year||"—")+"</td>"
         + "<td>"+(r.region ? escapeHtml(r.region) : "—")+"</td>"
+        + "<td class=\"mono\">"+fmtDate(r.firstDate)+"</td>"
         + "<td class=\"num\">"+fmtInt(r.startPrice)+"</td>"
+        + "<td class=\"mono\">"+fmtDate(r.soldDate)+"</td>"
         + "<td class=\"num\">"+r.soldCycle+"</td>"
         + "<td class=\"num\">"+fmtInt(r.soldPrice)+"</td>"
         + "<td><span class=\"pill up\">+"+Math.round(r.upliftPct)+"%</span></td>"
@@ -1126,6 +1195,7 @@
     document.getElementById("f-year-from").addEventListener("change", onYearFromChange);
     document.getElementById("f-year-to").addEventListener("change", onYearToChange);
     document.getElementById("f-cycle").addEventListener("change", render);
+    document.getElementById("f-auction-year").addEventListener("change", render);
     document.getElementById("lots-sort").addEventListener("change", function(){ renderLotsTable(filteredIdx()); });
     document.getElementById("f-reset").addEventListener("click", function(){
       document.getElementById("f-brand").value = "";
@@ -1133,6 +1203,7 @@
       document.getElementById("f-year-from").value = "";
       document.getElementById("f-year-to").value = "";
       document.getElementById("f-cycle").value = "";
+      document.getElementById("f-auction-year").value = "";
       populateModelFilter();
       render();
     });
@@ -1145,11 +1216,15 @@
     document.getElementById("cf-year-from").addEventListener("change", onComebackYearFromChange);
     document.getElementById("cf-year-to").addEventListener("change", onComebackYearToChange);
     document.getElementById("cf-cycle").addEventListener("change", renderComebackTable);
+    document.getElementById("cf-auction-year").addEventListener("change", renderComebackTable);
+    document.getElementById("cf-sort").addEventListener("change", renderComebackTable);
     document.getElementById("cf-reset").addEventListener("click", function(){
       document.getElementById("cf-brand").value = "";
       document.getElementById("cf-year-from").value = "";
       document.getElementById("cf-year-to").value = "";
       document.getElementById("cf-cycle").value = "";
+      document.getElementById("cf-auction-year").value = "";
+      document.getElementById("cf-sort").value = "uplift_desc";
       populateComebackModelFilter();
       renderComebackTable();
     });
