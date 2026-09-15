@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Реестр торгов</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -304,6 +305,28 @@
     </div>
   </div>
 
+  <div class="panel full">
+    <div class="p-head">
+      <h2 class="p-title">Не продались на первых торгах, но потом ушли дороже</h2>
+      <span class="p-hint" id="comeback-hint">—</span>
+    </div>
+    <p class="p-hint" style="margin:6px 0 0;">Один и тот же автомобиль (по VIN): 1-й круг — «не продано», один из следующих кругов — продано дороже стартовой цены именно этого 1-го круга. Только достоверный «круг 1» — лоты, впервые появившиеся с середины 2026 года (см. оговорку ниже). Таблица не зависит от фильтров выше — считается по всей базе.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Марка и модель</th><th class="num">Год</th><th>Регион</th>
+          <th class="num">Старт 1-х торгов, ₽</th><th class="num">Круг продажи</th>
+          <th class="num">Цена продажи, ₽</th><th class="num">Прирост</th><th>Лоты</th>
+        </tr></thead>
+        <tbody id="comeback-table"></tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <span class="ic">!</span>
+      <span><b>«Круг 1» определяется полем «по счёту выставление» и надёжен только для лотов, чья первая публикация реально попала в окно наблюдения бэкафилла</b> (SUCCEED — с 21.08.2025, FAILED — с 30.12.2025). Если машина впервые выставлялась ещё раньше этого окна, наш «круг 1» на самом деле может быть более поздним кругом — это не ошибка расчёта, а известное ограничение самих данных (раздел 8 инструкции). Поэтому в эту таблицу попадают только лоты с первым появлением от июня 2026 года — более ранние «круг 1» ненадёжны и просто исключены, а не искажают таблицу.</span>
+    </div>
+  </div>
+
   <footer>
     Источник — официальный API torgi.gov.ru, категория «Автомобили и мототехника», собрано скринером 12–13.09.2026.
     Годы выпуска распознаны из текста лота регулярным выражением и найдены не у всех записей.
@@ -317,7 +340,7 @@
 (function(){
   "use strict";
 
-  var DATA = null, CHARTS = {};
+  var DATA = null, CHARTS = {}, COMEBACK_ROWS = null;
 
   function fmtInt(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)); }
   function fmtRub(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)) + " ₽"; }
@@ -769,6 +792,79 @@
     }).join("");
   }
 
+  // ---------- «не продались на 1-х торгах, но потом дороже» - по VIN,
+  // не зависит от фильтров, считается один раз по всей базе.
+  // Берём только ДОСТОВЕРНЫЙ "круг 1": окно FAILED открылось 30.12.2025,
+  // но счётчик по-настоящему надёжен только для лотов, впервые
+  // появившихся с середины 2026 - раньше настоящий круг мог быть
+  // занижен (см. footer и раздел 8 инструкции) - такие пары в
+  // таблицу не попадают, а не искажают её.
+  var COMEBACK_RELIABLE_FROM = "2026-06";
+  function buildComebackRows(){
+    var byVin = {};
+    for(var i=0;i<DATA.n;i++){
+      var vin = DATA.vin[i];
+      if(!vin) continue;
+      (byVin[vin] = byVin[vin] || []).push(i);
+    }
+    var rows = [];
+    Object.keys(byVin).forEach(function(vin){
+      var idxs = byVin[vin];
+      var firstIdx = null;
+      idxs.forEach(function(i){ if(DATA.cycle[i]===1) firstIdx = i; });
+      if(firstIdx==null || DATA.status[firstIdx]!=="FAILED") return;
+      if(!DATA.month[firstIdx] || DATA.month[firstIdx] < COMEBACK_RELIABLE_FROM) return;
+      var startPrice = DATA.price_start[firstIdx];
+      if(!startPrice) return;
+      var best = null;
+      idxs.forEach(function(i){
+        if(i===firstIdx) return;
+        if(DATA.status[i]!=="SUCCEED" || !DATA.price_fin[i]) return;
+        if(DATA.price_fin[i] > startPrice && (best==null || DATA.price_fin[i] > DATA.price_fin[best])) best = i;
+      });
+      if(best==null) return;
+      rows.push({
+        firstIdx: firstIdx, soldIdx: best,
+        brand: DATA.brand[best] || DATA.brand[firstIdx],
+        model: DATA.model[best] || DATA.model[firstIdx],
+        year: DATA.year[best] || DATA.year[firstIdx],
+        region: DATA.region[best] || DATA.region[firstIdx],
+        startPrice: startPrice,
+        soldCycle: DATA.cycle[best],
+        soldPrice: DATA.price_fin[best],
+        upliftPct: (DATA.price_fin[best]/startPrice - 1) * 100
+      });
+    });
+    rows.sort(function(a,b){ return b.upliftPct - a.upliftPct; });
+    return rows;
+  }
+
+  function renderComebackTable(){
+    var rows = COMEBACK_ROWS || [];
+    var hint = rows.length ? fmtInt(rows.length)+" машин" : "не найдено";
+    if(rows.length){
+      var med = median(rows.map(function(r){return r.upliftPct;}));
+      hint += "  ·  медианный прирост +"+Math.round(med)+"%";
+    }
+    document.getElementById("comeback-hint").textContent = hint;
+    var tbody = document.getElementById("comeback-table");
+    tbody.innerHTML = rows.map(function(r){
+      var title = r.model ? escapeHtml(r.brand||"—")+" "+escapeHtml(r.model) : escapeHtml(r.brand||"—");
+      var firstUrl = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.id[r.firstIdx];
+      var soldUrl = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.id[r.soldIdx];
+      return "<tr>"
+        + "<td class=\"brand\">"+title+"</td>"
+        + "<td class=\"num\">"+(r.year||"—")+"</td>"
+        + "<td>"+(r.region ? escapeHtml(r.region) : "—")+"</td>"
+        + "<td class=\"num\">"+fmtInt(r.startPrice)+"</td>"
+        + "<td class=\"num\">"+r.soldCycle+"</td>"
+        + "<td class=\"num\">"+fmtInt(r.soldPrice)+"</td>"
+        + "<td><span class=\"pill up\">+"+Math.round(r.upliftPct)+"%</span></td>"
+        + "<td><a class=\"lot-link\" href=\""+firstUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">1-е торги ↗</a> · <a class=\"lot-link\" href=\""+soldUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">продажа ↗</a></td>"
+        + "</tr>";
+    }).join("");
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
@@ -849,6 +945,8 @@
       document.getElementById("subtitle").innerHTML =
         "<b>"+fmtInt(d.n)+"</b> реально завершённых лотов (продано или нет), собранных напрямую из API torgi.gov.ru за "+dateRange+" — не стартовые цены из объявлений, а факт исхода торгов.";
       buildModelBenchmark();
+      COMEBACK_ROWS = buildComebackRows();
+      renderComebackTable();
       populateBrandFilter();
       populateModelFilter();
       populateYearFilter();
