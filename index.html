@@ -76,6 +76,27 @@
   .sub{color:var(--ink-2); font-size:14.5px; max-width:66ch; line-height:1.55; margin:0;}
   .sub b{color:var(--ink); font-weight:600;}
 
+  /* tabs */
+  .tabs{
+    display:flex; flex-wrap:wrap; gap:4px; margin:22px 0 0;
+    border-bottom:1px solid var(--border);
+  }
+  .tab-btn{
+    font-family:inherit; font-size:13.5px; font-weight:500; color:var(--ink-muted);
+    background:none; border:none; cursor:pointer; padding:10px 4px 12px;
+    margin-right:22px; border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn:hover{color:var(--ink-2);}
+  .tab-btn.active{color:var(--ink); border-bottom-color:var(--accent); font-weight:600;}
+  .tab-btn:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:4px;}
+  .tab-count{
+    display:inline-block; margin-left:7px; padding:1px 7px; border-radius:99px;
+    background:var(--surface-alt); color:var(--ink-2); font-size:11px;
+    font-family:"IBM Plex Mono",monospace; vertical-align:1px;
+  }
+  .tab-btn.active .tab-count{background:var(--accent-wash); color:var(--accent);}
+  .tab-panel[hidden]{display:none;}
+
   /* filter bar */
   .filters{
     display:flex; flex-wrap:wrap; gap:10px; align-items:center;
@@ -188,6 +209,12 @@
     <p class="sub" id="subtitle">Загрузка…</p>
   </header>
 
+  <div class="tabs" id="tabs" role="tablist">
+    <button class="tab-btn active" id="tab-btn-overview" data-tab="overview" role="tab" aria-selected="true">Обзор</button>
+    <button class="tab-btn" id="tab-btn-comeback" data-tab="comeback" role="tab" aria-selected="false">Не продались на 1-х торгах, но потом дороже<span class="tab-count" id="tab-comeback-count"></span></button>
+  </div>
+
+  <div id="tab-overview" class="tab-panel">
   <div class="filters">
     <span class="flabel">Марка</span>
     <select id="f-brand"><option value="">Все марки</option></select>
@@ -304,13 +331,15 @@
       </table>
     </div>
   </div>
+  </div><!-- /tab-overview -->
 
+  <div id="tab-comeback" class="tab-panel" hidden>
   <div class="panel full">
     <div class="p-head">
       <h2 class="p-title">Не продались на первых торгах, но потом ушли дороже</h2>
       <span class="p-hint" id="comeback-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">Один и тот же автомобиль (по VIN): 1-й круг — «не продано», один из следующих кругов — продано дороже стартовой цены именно этого 1-го круга. Только достоверный «круг 1» — лоты, впервые появившиеся с середины 2026 года (см. оговорку ниже). Таблица не зависит от фильтров выше — считается по всей базе.</p>
+    <p class="p-hint" style="margin:6px 0 0;">Один и тот же автомобиль (по VIN): 1-й круг — «не продано», один из следующих кругов — продано дороже стартовой цены именно этого 1-го круга. Только достоверный «круг 1» — лоты, впервые появившиеся с середины 2026 года (см. оговорку ниже). Таблица не зависит от фильтров на вкладке «Обзор» — считается по всей базе.</p>
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -326,6 +355,7 @@
       <span><b>«Круг 1» определяется полем «по счёту выставление» и надёжен только для лотов, чья первая публикация реально попала в окно наблюдения бэкафилла</b> (SUCCEED — с 21.08.2025, FAILED — с 30.12.2025). Если машина впервые выставлялась ещё раньше этого окна, наш «круг 1» на самом деле может быть более поздним кругом — это не ошибка расчёта, а известное ограничение самих данных (раздел 8 инструкции). Поэтому в эту таблицу попадают только лоты с первым появлением от июня 2026 года — более ранние «круг 1» ненадёжны и просто исключены, а не искажают таблицу.</span>
     </div>
   </div>
+  </div><!-- /tab-comeback -->
 
   <footer>
     Источник — официальный API torgi.gov.ru, категория «Автомобили и мототехника», собрано скринером 12–13.09.2026.
@@ -847,6 +877,8 @@
       hint += "  ·  медианный прирост +"+Math.round(med)+"%";
     }
     document.getElementById("comeback-hint").textContent = hint;
+    var countBadge = document.getElementById("tab-comeback-count");
+    if(countBadge) countBadge.textContent = rows.length ? " " + fmtInt(rows.length) : "";
     var tbody = document.getElementById("comeback-table");
     tbody.innerHTML = rows.map(function(r){
       var title = r.model ? escapeHtml(r.brand||"—")+" "+escapeHtml(r.model) : escapeHtml(r.brand||"—");
@@ -938,6 +970,27 @@
     render();
   }
 
+  // ---------- вкладки ----------
+  function switchTab(name){
+    document.querySelectorAll(".tab-btn").forEach(function(btn){
+      var active = btn.dataset.tab === name;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    document.getElementById("tab-overview").hidden = name !== "overview";
+    document.getElementById("tab-comeback").hidden = name !== "comeback";
+    // при возврате на "Обзор" графики Chart.js иногда не пересчитывают
+    // размер после display:none -> resize() достаёт актуальную ширину контейнера
+    if(name === "overview"){
+      Object.keys(CHARTS).forEach(function(k){ if(CHARTS[k]) CHARTS[k].resize(); });
+    }
+  }
+  function initTabs(){
+    document.querySelectorAll(".tab-btn").forEach(function(btn){
+      btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+    });
+  }
+
   function init(){
     fetch("data.json").then(function(r){return r.json();}).then(function(d){
       DATA = d;
@@ -987,6 +1040,8 @@
       var lotsPanel = document.getElementById("lots-table").closest(".panel");
       if(lotsPanel) lotsPanel.scrollIntoView({behavior: "smooth", block: "start"});
     });
+
+    initTabs();
 
     if(window.matchMedia){
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){ if(DATA) render(); });
