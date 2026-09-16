@@ -346,7 +346,7 @@
         <thead><tr>
           <th>Марка и модель</th><th>Год</th><th>Статус</th><th>Дата торгов</th>
           <th class="num">Старт, ₽</th><th class="num">Сделка, ₽</th><th class="num">Круг</th>
-          <th>Цена vs медиана модели</th><th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
+          <th>Цена vs медиана модели</th><th class="num">Медиана Auto.ru, ₽</th><th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
         </tr></thead>
         <tbody id="lots-table"></tbody>
       </table>
@@ -938,6 +938,7 @@
         + "<td class=\"num\">"+fin+"</td>"
         + "<td class=\"num\">"+cycle+"</td>"
         + "<td>"+vsMedian+"</td>"
+        + "<td class=\"num\""+(retailMedian ? " title=\""+DATA.retail_n[i]+" объявлений, "+(DATA.retail_year_matched[i] ? "того же года ±1" : "модель в целом")+"\"" : "")+">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
         + "</tr>";
