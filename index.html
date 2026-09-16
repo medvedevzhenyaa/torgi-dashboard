@@ -318,6 +318,8 @@
           <th class="num sortable" data-sort-key="medStart" data-sort-type="num">Медиана старта, ₽<span class="sort-arrow"></span></th>
           <th class="num sortable" data-sort-key="medFin" data-sort-type="num">Медиана сделки, ₽<span class="sort-arrow"></span></th>
           <th class="num sortable" data-sort-key="medRatio" data-sort-type="num">Медиана ×<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="retailMedian" data-sort-type="num">Медиана Auto.ru, ₽<span class="sort-arrow"></span></th>
+          <th class="num sortable" data-sort-key="retailRatio" data-sort-type="num">Торги vs рынок<span class="sort-arrow"></span></th>
         </tr></thead>
         <tbody id="brand-table"></tbody>
       </table>
@@ -400,7 +402,8 @@
           <th>Марка и модель</th><th class="num">Год</th><th>Регион</th>
           <th>Дата 1-х торгов</th><th class="num">Старт 1-х торгов, ₽</th>
           <th>Дата продажи</th><th class="num">Круг продажи</th>
-          <th class="num">Цена продажи, ₽</th><th class="num">Прирост</th><th>Лоты</th>
+          <th class="num">Цена продажи, ₽</th><th class="num">Прирост</th>
+          <th>Продажа vs рынок (Auto.ru)</th><th>Лоты</th>
         </tr></thead>
         <tbody id="comeback-table"></tbody>
       </table>
@@ -430,6 +433,15 @@
   function fmtInt(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)); }
   function fmtRub(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)) + " ₽"; }
   function fmtRatio(x){ return x.toFixed(2).replace(".", ",") + "×"; }
+  // тот же стиль плашки "дешевле/дороже рынка", что и в таблице лотов -
+  // вынесено сюда, чтобы не дублировать в сводной таблице "Марки и модели"
+  function fmtPctDelta(ratio){
+    if(ratio < 0.10) return "<span class=\"pill neutral\" title=\"Слишком дёшево для целой машины - вероятно доля в праве\">аномалия</span>";
+    var pct = Math.round((1 - ratio) * 100);
+    if(pct >= 20) return "<span class=\"pill up\">−"+pct+"%</span>";
+    var label = pct >= 0 ? "−"+pct+"%" : "+"+(-pct)+"%";
+    return "<span style=\"color:var(--ink-muted)\">"+label+"</span>";
+  }
   function fmtDate(d){
     if(!d) return "—";
     var p = d.split("-");
@@ -538,6 +550,12 @@
   function getBenchmark(brand, model){
     if(!brand || !model || !MODEL_BENCHMARK) return null;
     return MODEL_BENCHMARK[brand + "||" + model] || null;
+  }
+  // розничный бенчмарк Auto.ru по марке+модели (без разбивки по году) -
+  // готовый словарь из data.json, считается один раз в publish_dashboard.py
+  function getRetailModelBenchmark(brand, model){
+    if(!brand || !model || !DATA.retail_model_benchmark) return null;
+    return DATA.retail_model_benchmark[brand + "||" + model] || null;
   }
 
   // ---------- render ----------
@@ -780,8 +798,13 @@
     });
     var allRows = Object.keys(byKey).map(function(k){
       var e = byKey[k];
+      var medFin = median(e.fins), medStart = median(e.starts);
+      var retailBm = getRetailModelBenchmark(e.brand, e.model);
+      var retailRatio = retailBm ? (medFin || medStart) / retailBm.median : null;
       return { label:k, brand:e.brand, model:e.model, n:e.n, share: e.n? e.succ/e.n : 0,
-               medStart: median(e.starts), medFin: median(e.fins), medRatio: median(e.ratios) };
+               medStart: medStart, medFin: medFin, medRatio: median(e.ratios),
+               retailMedian: retailBm ? retailBm.median : null, retailN: retailBm ? retailBm.n : null,
+               retailRatio: retailRatio };
     });
     var key = BRAND_SORT.key, dir = BRAND_SORT.dir === "asc" ? 1 : -1;
     allRows.sort(function(a,b){
@@ -812,6 +835,8 @@
         + "<td class=\"num\">"+ (r.medStart? fmtInt(r.medStart) : "—") +"</td>"
         + "<td class=\"num\">"+ (r.medFin? fmtInt(r.medFin) : "—") +"</td>"
         + "<td class=\"num\">"+ (r.medRatio? fmtRatio(r.medRatio) : "—") +"</td>"
+        + "<td class=\"num\""+(r.retailN? " title=\""+r.retailN+" объявлений на Auto.ru\"" : "")+">"+ (r.retailMedian? fmtInt(r.retailMedian) : "—") +"</td>"
+        + "<td class=\"num\">"+ (r.retailRatio ? fmtPctDelta(r.retailRatio) : "<span style=\"color:var(--ink-muted)\">—</span>") +"</td>"
         + "</tr>";
     }).join("");
   }
@@ -1044,6 +1069,18 @@
       var title = r.model ? escapeHtml(r.brand||"—")+" "+escapeHtml(r.model) : escapeHtml(r.brand||"—");
       var firstUrl = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.id[r.firstIdx];
       var soldUrl = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.id[r.soldIdx];
+
+      var retailMedian = DATA.retail_median ? DATA.retail_median[r.soldIdx] : null;
+      var vsRetail;
+      if(!retailMedian){
+        vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
+      } else {
+        var retailN = DATA.retail_n[r.soldIdx];
+        var yearNote = DATA.retail_year_matched[r.soldIdx] ? "того же года ±1" : "модель в целом, год не учтён";
+        vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
+          + fmtPctDelta(r.soldPrice / retailMedian) + "</span>";
+      }
+
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
         + "<td class=\"num\">"+(r.year||"—")+"</td>"
@@ -1054,6 +1091,7 @@
         + "<td class=\"num\">"+r.soldCycle+"</td>"
         + "<td class=\"num\">"+fmtInt(r.soldPrice)+"</td>"
         + "<td><span class=\"pill up\">+"+Math.round(r.upliftPct)+"%</span></td>"
+        + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+firstUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">1-е торги ↗</a> · <a class=\"lot-link\" href=\""+soldUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">продажа ↗</a></td>"
         + "</tr>";
     }).join("");
