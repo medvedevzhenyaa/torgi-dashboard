@@ -430,6 +430,17 @@
 
   var DATA = null, CHARTS = {}, COMEBACK_ROWS = null, DATA_DATE_RANGE = "";
 
+  // сортировка выпадающих списков марок/моделей - по алфавиту, латиница
+  // впереди кириллицы (а не по числу лотов, как раньше) - так проще
+  // найти нужную марку, зная только её написание
+  function isLatinLabel(s){ return /^[A-Za-z]/.test(s); }
+  function sortAlphaLatinFirst(arr){
+    return arr.slice().sort(function(a,b){
+      var la = isLatinLabel(a), lb = isLatinLabel(b);
+      if(la !== lb) return la ? -1 : 1;
+      return a.localeCompare(b, la ? "en" : "ru", {sensitivity:"base"});
+    });
+  }
   function fmtInt(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)); }
   function fmtRub(x){ return new Intl.NumberFormat("ru-RU").format(Math.round(x)) + " ₽"; }
   function fmtRatio(x){ return x.toFixed(2).replace(".", ",") + "×"; }
@@ -1104,7 +1115,7 @@
   function populateComebackBrandFilter(){
     var counts = {};
     (COMEBACK_ROWS || []).forEach(function(r){ if(!r.brand) return; counts[r.brand]=(counts[r.brand]||0)+1; });
-    var brands = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];});
+    var brands = sortAlphaLatinFirst(Object.keys(counts));
     var sel = document.getElementById("cf-brand");
     sel.innerHTML = "<option value=\"\">Все марки</option>";
     brands.forEach(function(b){
@@ -1131,7 +1142,7 @@
       if(r.brand !== brand || !r.model) return;
       counts[r.model] = (counts[r.model]||0)+1;
     });
-    var models = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];});
+    var models = sortAlphaLatinFirst(Object.keys(counts));
     models.forEach(function(m){
       var opt = document.createElement("option");
       opt.value = m; opt.textContent = m+" ("+counts[m]+")";
@@ -1176,7 +1187,7 @@
   function populateBrandFilter(){
     var counts = {};
     for(var i=0;i<DATA.n;i++){ var b=DATA.brand[i]; if(!b) continue; counts[b]=(counts[b]||0)+1; }
-    var brands = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40);
+    var brands = sortAlphaLatinFirst(Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40));
     var sel = document.getElementById("f-brand");
     brands.forEach(function(b){
       var opt = document.createElement("option");
@@ -1205,7 +1216,7 @@
       var m = DATA.model[i]; if(!m) continue;
       counts[m] = (counts[m]||0)+1;
     }
-    var models = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40);
+    var models = sortAlphaLatinFirst(Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40));
     models.forEach(function(m){
       var opt = document.createElement("option");
       opt.value = m; opt.textContent = m+" ("+counts[m]+")";
