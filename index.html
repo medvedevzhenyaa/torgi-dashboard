@@ -403,7 +403,7 @@
           <th>Дата 1-х торгов</th><th class="num">Старт 1-х торгов, ₽</th>
           <th>Дата продажи</th><th class="num">Круг продажи</th>
           <th class="num">Цена продажи, ₽</th><th class="num">Прирост</th>
-          <th>Продажа vs рынок (Auto.ru)</th><th>Лоты</th>
+          <th class="num">Медиана Auto.ru, ₽</th><th>Продажа vs рынок (Auto.ru)</th><th>Лоты</th>
         </tr></thead>
         <tbody id="comeback-table"></tbody>
       </table>
@@ -1092,6 +1092,7 @@
         + "<td class=\"num\">"+r.soldCycle+"</td>"
         + "<td class=\"num\">"+fmtInt(r.soldPrice)+"</td>"
         + "<td><span class=\"pill up\">+"+Math.round(r.upliftPct)+"%</span></td>"
+        + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+firstUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">1-е торги ↗</a> · <a class=\"lot-link\" href=\""+soldUrl+"\" target=\"_blank\" rel=\"noopener noreferrer\">продажа ↗</a></td>"
         + "</tr>";
