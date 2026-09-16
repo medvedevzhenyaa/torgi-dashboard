@@ -1187,7 +1187,7 @@
   function populateBrandFilter(){
     var counts = {};
     for(var i=0;i<DATA.n;i++){ var b=DATA.brand[i]; if(!b) continue; counts[b]=(counts[b]||0)+1; }
-    var brands = sortAlphaLatinFirst(Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40));
+    var brands = sortAlphaLatinFirst(Object.keys(counts));
     var sel = document.getElementById("f-brand");
     brands.forEach(function(b){
       var opt = document.createElement("option");
@@ -1216,7 +1216,7 @@
       var m = DATA.model[i]; if(!m) continue;
       counts[m] = (counts[m]||0)+1;
     }
-    var models = sortAlphaLatinFirst(Object.keys(counts).sort(function(a,b){return counts[b]-counts[a];}).slice(0,40));
+    var models = sortAlphaLatinFirst(Object.keys(counts));
     models.forEach(function(m){
       var opt = document.createElement("option");
       opt.value = m; opt.textContent = m+" ("+counts[m]+")";
