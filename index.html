@@ -344,7 +344,7 @@
         <thead><tr>
           <th>Марка и модель</th><th>Год</th><th>Статус</th><th>Дата торгов</th>
           <th class="num">Старт, ₽</th><th class="num">Сделка, ₽</th><th class="num">Круг</th>
-          <th>Цена vs медиана модели</th><th>Лот</th>
+          <th>Цена vs медиана модели</th><th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
         </tr></thead>
         <tbody id="lots-table"></tbody>
       </table>
@@ -880,6 +880,29 @@
         }
       }
 
+      var retailMedian = DATA.retail_median ? DATA.retail_median[i] : null;
+      var vsRetail;
+      if(!retailMedian){
+        vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
+      } else {
+        var ownPrice = DATA.price_fin[i] || DATA.price_start[i];
+        var retailRatio = ownPrice / retailMedian;
+        var retailN = DATA.retail_n[i];
+        var yearNote = DATA.retail_year_matched[i] ? "того же года ±1" : "модель в целом, год не учтён";
+        var retailTitle = "Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)";
+        if(retailRatio < 0.10){
+          vsRetail = "<span class=\"pill neutral\" title=\"Слишком дёшево для целой машины - вероятно доля в праве\">аномалия</span>";
+        } else {
+          var pctCheaperRetail = Math.round((1 - retailRatio) * 100);
+          if(pctCheaperRetail >= 20){
+            vsRetail = "<span class=\"pill up\" title=\""+retailTitle+"\">−"+pctCheaperRetail+"%</span>";
+          } else {
+            var retailLabel = pctCheaperRetail >= 0 ? "−"+pctCheaperRetail+"%" : "+"+(-pctCheaperRetail)+"%";
+            vsRetail = "<span style=\"color:var(--ink-muted)\" title=\""+retailTitle+"\">"+retailLabel+"</span>";
+          }
+        }
+      }
+
       var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.id[i];
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
@@ -890,6 +913,7 @@
         + "<td class=\"num\">"+fin+"</td>"
         + "<td class=\"num\">"+cycle+"</td>"
         + "<td>"+vsMedian+"</td>"
+        + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
         + "</tr>";
     }).join("");
