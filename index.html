@@ -217,6 +217,7 @@
     <button class="tab-btn active" id="tab-btn-overview" data-tab="overview" role="tab" aria-selected="true">Обзор</button>
     <button class="tab-btn" id="tab-btn-comeback" data-tab="comeback" role="tab" aria-selected="false">Не продались на 1-х торгах, но потом дороже<span class="tab-count" id="tab-comeback-count"></span></button>
     <button class="tab-btn" id="tab-btn-active" data-tab="active" role="tab" aria-selected="false">Сейчас на торгах<span class="tab-count" id="tab-active-count"></span></button>
+    <button class="tab-btn" id="tab-btn-favorites" data-tab="favorites" role="tab" aria-selected="false">Избранное<span class="tab-count" id="tab-favorites-count"></span></button>
   </div>
 
   <div id="tab-overview" class="tab-panel">
@@ -465,6 +466,57 @@
     <p class="p-hint" id="active-lots-hint" style="margin:8px 0 0;">—</p>
   </div>
   </div><!-- /tab-active -->
+
+  <div id="tab-favorites" class="tab-panel" hidden>
+  <div class="panel full">
+    <div class="p-head">
+      <h2 class="p-title">Всё, что когда-либо ушло в Telegram-уведомление</h2>
+      <span class="p-hint" id="favorites-hint">—</span>
+    </div>
+    <p class="p-hint" style="margin:6px 0 0;">Список слежения (Audi/Toyota/Volkswagen/Lexus), красивый номер, год по VIN не совпадает с указанным, старт дешевле медианы реальных продаж — те же критерии, что для уведомлений в Telegram. Копится день за днём (в отличие от «Сейчас на торгах») — лот остаётся здесь и после того, как торги завершились.</p>
+
+    <div class="filters">
+      <span class="flabel">Марка</span>
+      <select id="ff-brand"><option value="">Все марки</option></select>
+      <span class="flabel">Модель</span>
+      <select id="ff-model"><option value="">Все модели</option></select>
+      <span class="flabel">Год выпуска</span>
+      <select id="ff-year-from"><option value="">от</option></select>
+      <span class="flabel" aria-hidden="true">—</span>
+      <select id="ff-year-to"><option value="">до</option></select>
+      <span class="flabel">Причина</span>
+      <select id="ff-tag">
+        <option value="">Любая</option>
+        <option value="watchlist">Список слежения</option>
+        <option value="plate">Красивый номер</option>
+        <option value="year">Год не совпадает с VIN</option>
+        <option value="cheap">Дешевле медианы</option>
+      </select>
+      <span class="flabel">Сортировка</span>
+      <select id="ff-sort">
+        <option value="notified_desc">сначала недавние уведомления</option>
+        <option value="notified_asc">сначала давние уведомления</option>
+        <option value="value_asc">сначала выгоднее рынка (Auto.ru)</option>
+        <option value="price_asc">сначала дешевле старт</option>
+        <option value="price_desc">сначала дороже старт</option>
+      </select>
+      <button class="reset" id="ff-reset">Сбросить фильтры</button>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Номер</th>
+          <th>Причина(ы)</th><th>Уведомление</th>
+          <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
+        </tr></thead>
+        <tbody id="favorites-table"></tbody>
+      </table>
+    </div>
+    <p class="p-hint" id="favorites-lots-hint" style="margin:8px 0 0;">—</p>
+  </div>
+  </div><!-- /tab-favorites -->
 
   <footer>
     Источник — официальный API torgi.gov.ru, категория «Автомобили и мототехника». Базовый сбор 12–13.09.2026, расширенный бэкафилл по торговым площадкам — 15.09.2026 (обход лимита API в 10 000 записей на статус через фильтр по площадке, отдельно для каждой из 8).
@@ -1391,6 +1443,175 @@
     }).join("");
   }
 
+  // ---------- «Избранное» - лоты, которые когда-либо ушли в Telegram
+  // (DATA.fav_* - накопительный, в отличие от active_*, см.
+  // torgi_screener.py main() / publish_dashboard.build_favorites_data) ----------
+  var FAV_TAG_LABEL = {watchlist:"Список слежения", plate:"Красивый номер", year:"Год не совпадает с VIN", cheap:"Дешевле медианы"};
+  function populateFavoritesBrandFilter(){
+    var counts = {};
+    for(var i=0;i<DATA.fav_n;i++){ var b=DATA.fav_brand[i]; if(!b) continue; counts[b]=(counts[b]||0)+1; }
+    var brands = sortAlphaLatinFirst(Object.keys(counts));
+    var sel = document.getElementById("ff-brand");
+    var prev = sel.value;
+    sel.innerHTML = "<option value=\"\">Все марки</option>";
+    brands.forEach(function(b){
+      var opt = document.createElement("option");
+      opt.value = b; opt.textContent = b+" ("+counts[b]+")";
+      sel.appendChild(opt);
+    });
+    if(prev && counts[prev]) sel.value = prev;
+  }
+  function populateFavoritesModelFilter(){
+    var brand = document.getElementById("ff-brand").value;
+    var sel = document.getElementById("ff-model");
+    var prev = sel.value;
+    sel.innerHTML = "";
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = brand ? "Все модели" : "Сначала выберите марку";
+    sel.appendChild(placeholder);
+    sel.disabled = !brand;
+    if(!brand) return;
+    var counts = {};
+    for(var i=0;i<DATA.fav_n;i++){
+      if(DATA.fav_brand[i] !== brand) continue;
+      var m = DATA.fav_model[i]; if(!m) continue;
+      counts[m] = (counts[m]||0)+1;
+    }
+    var models = sortAlphaLatinFirst(Object.keys(counts));
+    models.forEach(function(m){
+      var opt = document.createElement("option");
+      opt.value = m; opt.textContent = m+" ("+counts[m]+")";
+      sel.appendChild(opt);
+    });
+    if(prev && counts[prev]) sel.value = prev;
+  }
+  function populateFavoritesYearFilter(){
+    var years = {};
+    for(var i=0;i<DATA.fav_n;i++){ var y = DATA.fav_year[i]; if(y && y>=1970 && y<=2027) years[y]=true; }
+    var sorted = Object.keys(years).map(Number).sort(function(a,b){return a-b;});
+    var selFrom = document.getElementById("ff-year-from");
+    var selTo = document.getElementById("ff-year-to");
+    selFrom.innerHTML = "<option value=\"\">от</option>";
+    selTo.innerHTML = "<option value=\"\">до</option>";
+    sorted.forEach(function(y){
+      var o1 = document.createElement("option"); o1.value = y; o1.textContent = y; selFrom.appendChild(o1);
+      var o2 = document.createElement("option"); o2.value = y; o2.textContent = y; selTo.appendChild(o2);
+    });
+  }
+  function onFavoritesYearFromChange(){
+    var from = document.getElementById("ff-year-from").value;
+    var toSel = document.getElementById("ff-year-to");
+    if(from && toSel.value && Number(toSel.value) < Number(from)) toSel.value = from;
+    renderFavoritesTable();
+  }
+  function onFavoritesYearToChange(){
+    var to = document.getElementById("ff-year-to").value;
+    var fromSel = document.getElementById("ff-year-from");
+    if(to && fromSel.value && Number(fromSel.value) > Number(to)) fromSel.value = to;
+    renderFavoritesTable();
+  }
+
+  function favoritesCurrentFilter(){
+    var yf = document.getElementById("ff-year-from").value;
+    var yt = document.getElementById("ff-year-to").value;
+    return {
+      brand: document.getElementById("ff-brand").value,
+      model: document.getElementById("ff-model").value,
+      yearFrom: yf ? Number(yf) : null,
+      yearTo: yt ? Number(yt) : null,
+      tag: document.getElementById("ff-tag").value,
+      sort: document.getElementById("ff-sort").value
+    };
+  }
+  function favoritesFilteredIdx(){
+    var f = favoritesCurrentFilter();
+    var idx = [];
+    for(var i=0;i<DATA.fav_n;i++){
+      if(f.brand && DATA.fav_brand[i] !== f.brand) continue;
+      if(f.model && DATA.fav_model[i] !== f.model) continue;
+      if(f.yearFrom != null || f.yearTo != null){
+        var y = DATA.fav_year[i];
+        if(y == null) continue;
+        if(f.yearFrom != null && y < f.yearFrom) continue;
+        if(f.yearTo != null && y > f.yearTo) continue;
+      }
+      if(f.tag && (DATA.fav_tags[i]||[]).indexOf(f.tag) === -1) continue;
+      idx.push(i);
+    }
+    function valueRatioFav(i){
+      var rm = DATA.fav_retail_median[i];
+      if(!rm) return Infinity;
+      return DATA.fav_price_start[i] / rm;
+    }
+    if(f.sort === "notified_asc") idx.sort(function(a,b){ return (DATA.fav_notified_at[a]||"").localeCompare(DATA.fav_notified_at[b]||""); });
+    else if(f.sort === "value_asc") idx.sort(function(a,b){ return valueRatioFav(a)-valueRatioFav(b); });
+    else if(f.sort === "price_asc") idx.sort(function(a,b){ return DATA.fav_price_start[a]-DATA.fav_price_start[b]; });
+    else if(f.sort === "price_desc") idx.sort(function(a,b){ return DATA.fav_price_start[b]-DATA.fav_price_start[a]; });
+    else idx.sort(function(a,b){ return (DATA.fav_notified_at[b]||"").localeCompare(DATA.fav_notified_at[a]||""); }); // notified_desc, по умолчанию
+    return idx;
+  }
+  var FAV_LOTS_CAP = 150;
+  function renderFavoritesTable(){
+    document.getElementById("favorites-hint").textContent = DATA.fav_n
+      ? fmtInt(DATA.fav_n)+" лотов в избранном"
+      : "избранное ещё не собрано - появится после первого уведомления в Telegram";
+    var idx = favoritesFilteredIdx();
+    var total = idx.length;
+    var shown = idx.slice(0, FAV_LOTS_CAP);
+    document.getElementById("favorites-lots-hint").textContent = total
+      ? "показано "+fmtInt(shown.length)+" из "+fmtInt(total)+" — сузьте фильтры выше, чтобы увидеть остальные"
+      : "нет лотов по текущему фильтру";
+    var countBadge = document.getElementById("tab-favorites-count");
+    if(countBadge) countBadge.textContent = DATA.fav_n ? " "+fmtInt(DATA.fav_n) : "";
+
+    var tbody = document.getElementById("favorites-table");
+    tbody.innerHTML = shown.map(function(i){
+      var brand = DATA.fav_brand[i] || "—", model = DATA.fav_model[i];
+      var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
+      var year = DATA.fav_year[i] ? DATA.fav_year[i] : "—";
+
+      var plate = DATA.fav_plate[i];
+      var rating = DATA.fav_plate_rating[i];
+      var plateCell = plate
+        ? escapeHtml(plate) + (rating ? " " + "★".repeat(rating) : "")
+        : "—";
+
+      var tags = DATA.fav_tags[i] || [];
+      var reasons = DATA.fav_reasons[i] || [];
+      var reasonCell = tags.length
+        ? tags.map(function(t){ return "<span class=\"pill neutral\">"+escapeHtml(FAV_TAG_LABEL[t]||t)+"</span>"; }).join(" ")
+        : "—";
+      var reasonTitle = reasons.length ? " title=\""+escapeHtml(reasons.join("; "))+"\"" : "";
+
+      var retailMedian = DATA.fav_retail_median[i];
+      var vsRetail;
+      if(!retailMedian){
+        vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
+      } else {
+        var ratio = DATA.fav_price_start[i] / retailMedian;
+        var retailN = DATA.fav_retail_n[i];
+        var yearNote = DATA.fav_retail_year_matched[i] ? "того же года ±1" : "модель в целом, год не учтён";
+        vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
+          + fmtPctDelta(ratio) + "</span>";
+      }
+
+      var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.fav_id[i];
+      return "<tr>"
+        + "<td class=\"brand\">"+title+"</td>"
+        + "<td class=\"num\">"+year+"</td>"
+        + "<td>"+(DATA.fav_region[i] ? escapeHtml(DATA.fav_region[i]) : "—")+"</td>"
+        + "<td class=\"mono\">"+plateCell+"</td>"
+        + "<td"+reasonTitle+">"+reasonCell+"</td>"
+        + "<td class=\"mono\">"+fmtDate(DATA.fav_notified_at[i])+"</td>"
+        + "<td class=\"num\">"+(DATA.fav_price_start[i] ? fmtInt(DATA.fav_price_start[i]) : "—")+"</td>"
+        + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
+        + "<td>"+vsRetail+"</td>"
+        + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
+        + "</tr>";
+    }).join("");
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
@@ -1474,6 +1695,7 @@
     document.getElementById("tab-overview").hidden = name !== "overview";
     document.getElementById("tab-comeback").hidden = name !== "comeback";
     document.getElementById("tab-active").hidden = name !== "active";
+    document.getElementById("tab-favorites").hidden = name !== "favorites";
     // при возврате на "Обзор" графики Chart.js иногда не пересчитывают
     // размер после display:none -> resize() достаёт актуальную ширину контейнера
     if(name === "overview"){
@@ -1508,6 +1730,10 @@
       populateActiveModelFilter();
       populateActiveYearFilter();
       renderActiveTable();
+      populateFavoritesBrandFilter();
+      populateFavoritesModelFilter();
+      populateFavoritesYearFilter();
+      renderFavoritesTable();
     }).catch(function(err){
       document.getElementById("subtitle").textContent = "Не удалось загрузить данные: "+err;
     });
@@ -1572,6 +1798,25 @@
       document.getElementById("af-sort").value = "deadline_asc";
       populateActiveModelFilter();
       renderActiveTable();
+    });
+
+    document.getElementById("ff-brand").addEventListener("change", function(){
+      populateFavoritesModelFilter();
+      renderFavoritesTable();
+    });
+    document.getElementById("ff-model").addEventListener("change", renderFavoritesTable);
+    document.getElementById("ff-year-from").addEventListener("change", onFavoritesYearFromChange);
+    document.getElementById("ff-year-to").addEventListener("change", onFavoritesYearToChange);
+    document.getElementById("ff-tag").addEventListener("change", renderFavoritesTable);
+    document.getElementById("ff-sort").addEventListener("change", renderFavoritesTable);
+    document.getElementById("ff-reset").addEventListener("click", function(){
+      document.getElementById("ff-brand").value = "";
+      document.getElementById("ff-year-from").value = "";
+      document.getElementById("ff-year-to").value = "";
+      document.getElementById("ff-tag").value = "";
+      document.getElementById("ff-sort").value = "notified_desc";
+      populateFavoritesModelFilter();
+      renderFavoritesTable();
     });
 
     // клик по строке "Марки и модели" -> подставляем марку/модель в
