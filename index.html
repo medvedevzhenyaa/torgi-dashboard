@@ -216,6 +216,7 @@
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab-btn active" id="tab-btn-overview" data-tab="overview" role="tab" aria-selected="true">Обзор</button>
     <button class="tab-btn" id="tab-btn-comeback" data-tab="comeback" role="tab" aria-selected="false">Не продались на 1-х торгах, но потом дороже<span class="tab-count" id="tab-comeback-count"></span></button>
+    <button class="tab-btn" id="tab-btn-active" data-tab="active" role="tab" aria-selected="false">Сейчас на торгах<span class="tab-count" id="tab-active-count"></span></button>
   </div>
 
   <div id="tab-overview" class="tab-panel">
@@ -414,6 +415,56 @@
     </div>
   </div>
   </div><!-- /tab-comeback -->
+
+  <div id="tab-active" class="tab-panel" hidden>
+  <div class="panel full">
+    <div class="p-head">
+      <h2 class="p-title">Лоты, которые торгуются прямо сейчас</h2>
+      <span class="p-hint" id="active-hint">—</span>
+    </div>
+    <p class="p-hint" style="margin:6px 0 0;">В отличие от вкладки «Обзор» (только уже завершённые торги — продано/не продано), здесь — снимок ещё ИДУЩИХ торгов: приём заявок не завершён, исхода ещё нет. Обновляется на каждом ежедневном прогоне, историю прошлых снимков не хранит — только то, что видно на сайте прямо сейчас.</p>
+
+    <div class="filters">
+      <span class="flabel">Марка</span>
+      <select id="af-brand"><option value="">Все марки</option></select>
+      <span class="flabel">Модель</span>
+      <select id="af-model"><option value="">Все модели</option></select>
+      <span class="flabel">Год выпуска</span>
+      <select id="af-year-from"><option value="">от</option></select>
+      <span class="flabel" aria-hidden="true">—</span>
+      <select id="af-year-to"><option value="">до</option></select>
+      <span class="flabel">Стадия</span>
+      <select id="af-stage">
+        <option value="">Любая</option>
+        <option value="первые">Первые торги</option>
+        <option value="повторные">Повторные торги</option>
+        <option value="публичное">Публичное предложение</option>
+      </select>
+      <span class="flabel">Сортировка</span>
+      <select id="af-sort">
+        <option value="deadline_asc">сначала скорее закончится приём заявок</option>
+        <option value="first_seen_desc">сначала недавно появившиеся</option>
+        <option value="value_asc">сначала выгоднее рынка (Auto.ru)</option>
+        <option value="price_asc">сначала дешевле старт</option>
+        <option value="price_desc">сначала дороже старт</option>
+      </select>
+      <button class="reset" id="af-reset">Сбросить фильтры</button>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Стадия</th>
+          <th>Появился</th><th>Окончание приёма заявок</th>
+          <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
+        </tr></thead>
+        <tbody id="active-table"></tbody>
+      </table>
+    </div>
+    <p class="p-hint" id="active-lots-hint" style="margin:8px 0 0;">—</p>
+  </div>
+  </div><!-- /tab-active -->
 
   <footer>
     Источник — официальный API torgi.gov.ru, категория «Автомобили и мототехника». Базовый сбор 12–13.09.2026, расширенный бэкафилл по торговым площадкам — 15.09.2026 (обход лимита API в 10 000 записей на статус через фильтр по площадке, отдельно для каждой из 8).
@@ -1178,6 +1229,168 @@
     renderComebackTable();
   }
 
+  // ---------- «Сейчас на торгах» - лоты, у которых приём заявок ещё
+  // не завершён (DATA.active_* - отдельный снимок, перезаписывается
+  // целиком на каждом прогоне, см. torgi_screener.py main()) ----------
+  function populateActiveBrandFilter(){
+    var counts = {};
+    for(var i=0;i<DATA.active_n;i++){ var b=DATA.active_brand[i]; if(!b) continue; counts[b]=(counts[b]||0)+1; }
+    var brands = sortAlphaLatinFirst(Object.keys(counts));
+    var sel = document.getElementById("af-brand");
+    var prev = sel.value;
+    sel.innerHTML = "<option value=\"\">Все марки</option>";
+    brands.forEach(function(b){
+      var opt = document.createElement("option");
+      opt.value = b; opt.textContent = b+" ("+counts[b]+")";
+      sel.appendChild(opt);
+    });
+    if(prev && counts[prev]) sel.value = prev;
+  }
+  function populateActiveModelFilter(){
+    var brand = document.getElementById("af-brand").value;
+    var sel = document.getElementById("af-model");
+    var prev = sel.value;
+    sel.innerHTML = "";
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = brand ? "Все модели" : "Сначала выберите марку";
+    sel.appendChild(placeholder);
+    sel.disabled = !brand;
+    if(!brand) return;
+    var counts = {};
+    for(var i=0;i<DATA.active_n;i++){
+      if(DATA.active_brand[i] !== brand) continue;
+      var m = DATA.active_model[i]; if(!m) continue;
+      counts[m] = (counts[m]||0)+1;
+    }
+    var models = sortAlphaLatinFirst(Object.keys(counts));
+    models.forEach(function(m){
+      var opt = document.createElement("option");
+      opt.value = m; opt.textContent = m+" ("+counts[m]+")";
+      sel.appendChild(opt);
+    });
+    if(prev && counts[prev]) sel.value = prev;
+  }
+  function populateActiveYearFilter(){
+    var years = {};
+    for(var i=0;i<DATA.active_n;i++){ var y = DATA.active_year[i]; if(y && y>=1970 && y<=2027) years[y]=true; }
+    var sorted = Object.keys(years).map(Number).sort(function(a,b){return a-b;});
+    var selFrom = document.getElementById("af-year-from");
+    var selTo = document.getElementById("af-year-to");
+    selFrom.innerHTML = "<option value=\"\">от</option>";
+    selTo.innerHTML = "<option value=\"\">до</option>";
+    sorted.forEach(function(y){
+      var o1 = document.createElement("option"); o1.value = y; o1.textContent = y; selFrom.appendChild(o1);
+      var o2 = document.createElement("option"); o2.value = y; o2.textContent = y; selTo.appendChild(o2);
+    });
+  }
+  function onActiveYearFromChange(){
+    var from = document.getElementById("af-year-from").value;
+    var toSel = document.getElementById("af-year-to");
+    if(from && toSel.value && Number(toSel.value) < Number(from)) toSel.value = from;
+    renderActiveTable();
+  }
+  function onActiveYearToChange(){
+    var to = document.getElementById("af-year-to").value;
+    var fromSel = document.getElementById("af-year-from");
+    if(to && fromSel.value && Number(fromSel.value) > Number(to)) fromSel.value = to;
+    renderActiveTable();
+  }
+
+  function activeCurrentFilter(){
+    var yf = document.getElementById("af-year-from").value;
+    var yt = document.getElementById("af-year-to").value;
+    return {
+      brand: document.getElementById("af-brand").value,
+      model: document.getElementById("af-model").value,
+      yearFrom: yf ? Number(yf) : null,
+      yearTo: yt ? Number(yt) : null,
+      stage: document.getElementById("af-stage").value,
+      sort: document.getElementById("af-sort").value
+    };
+  }
+  function activeFilteredIdx(){
+    var f = activeCurrentFilter();
+    var idx = [];
+    for(var i=0;i<DATA.active_n;i++){
+      if(f.brand && DATA.active_brand[i] !== f.brand) continue;
+      if(f.model && DATA.active_model[i] !== f.model) continue;
+      if(f.yearFrom != null || f.yearTo != null){
+        var y = DATA.active_year[i];
+        if(y == null) continue;
+        if(f.yearFrom != null && y < f.yearFrom) continue;
+        if(f.yearTo != null && y > f.yearTo) continue;
+      }
+      // стадии в данных - строки вида "первые торги (вероятно)" /
+      // "повторные торги (подтверждено по VIN, N-е выставление)" /
+      // "публичное предложение (эвристика)" - сверяем по началу строки
+      if(f.stage && (DATA.active_stage[i]||"").indexOf(f.stage) !== 0) continue;
+      idx.push(i);
+    }
+    function valueRatioActive(i){
+      var rm = DATA.active_retail_median[i];
+      if(!rm) return Infinity;
+      return DATA.active_price_start[i] / rm;
+    }
+    if(f.sort === "first_seen_desc") idx.sort(function(a,b){ return (DATA.active_first_seen[b]||"").localeCompare(DATA.active_first_seen[a]||""); });
+    else if(f.sort === "value_asc") idx.sort(function(a,b){ return valueRatioActive(a)-valueRatioActive(b); });
+    else if(f.sort === "price_asc") idx.sort(function(a,b){ return DATA.active_price_start[a]-DATA.active_price_start[b]; });
+    else if(f.sort === "price_desc") idx.sort(function(a,b){ return DATA.active_price_start[b]-DATA.active_price_start[a]; });
+    else idx.sort(function(a,b){ // deadline_asc, по умолчанию - без даты в конец
+      var da = DATA.active_deadline[a]||"9999", db = DATA.active_deadline[b]||"9999";
+      return da.localeCompare(db);
+    });
+    return idx;
+  }
+  var ACTIVE_LOTS_CAP = 150;
+  function renderActiveTable(){
+    document.getElementById("active-hint").textContent = DATA.active_n
+      ? fmtInt(DATA.active_n)+" лотов на снимок от "+ (DATA.generated || "—")
+      : "снимок ещё не собран";
+    var idx = activeFilteredIdx();
+    var total = idx.length;
+    var shown = idx.slice(0, ACTIVE_LOTS_CAP);
+    document.getElementById("active-lots-hint").textContent = total
+      ? "показано "+fmtInt(shown.length)+" из "+fmtInt(total)+" — сузьте фильтры выше, чтобы увидеть остальные"
+      : "нет лотов по текущему фильтру";
+    var countBadge = document.getElementById("tab-active-count");
+    if(countBadge) countBadge.textContent = DATA.active_n ? " "+fmtInt(DATA.active_n) : "";
+
+    var tbody = document.getElementById("active-table");
+    tbody.innerHTML = shown.map(function(i){
+      var brand = DATA.active_brand[i] || "—", model = DATA.active_model[i];
+      var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
+      var year = DATA.active_year[i] ? DATA.active_year[i] : "—";
+      var stage = DATA.active_stage[i] || "—";
+
+      var retailMedian = DATA.active_retail_median[i];
+      var vsRetail;
+      if(!retailMedian){
+        vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
+      } else {
+        var ratio = DATA.active_price_start[i] / retailMedian;
+        var retailN = DATA.active_retail_n[i];
+        var yearNote = DATA.active_retail_year_matched[i] ? "того же года ±1" : "модель в целом, год не учтён";
+        vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
+          + fmtPctDelta(ratio) + "</span>";
+      }
+
+      var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.active_id[i];
+      return "<tr>"
+        + "<td class=\"brand\">"+title+"</td>"
+        + "<td class=\"num\">"+year+"</td>"
+        + "<td>"+(DATA.active_region[i] ? escapeHtml(DATA.active_region[i]) : "—")+"</td>"
+        + "<td>"+escapeHtml(stage)+"</td>"
+        + "<td class=\"mono\">"+fmtDate(DATA.active_first_seen[i])+"</td>"
+        + "<td class=\"mono\">"+fmtDate(DATA.active_deadline[i])+"</td>"
+        + "<td class=\"num\">"+fmtInt(DATA.active_price_start[i])+"</td>"
+        + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
+        + "<td>"+vsRetail+"</td>"
+        + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
+        + "</tr>";
+    }).join("");
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
@@ -1260,6 +1473,7 @@
     });
     document.getElementById("tab-overview").hidden = name !== "overview";
     document.getElementById("tab-comeback").hidden = name !== "comeback";
+    document.getElementById("tab-active").hidden = name !== "active";
     // при возврате на "Обзор" графики Chart.js иногда не пересчитывают
     // размер после display:none -> resize() достаёт актуальную ширину контейнера
     if(name === "overview"){
@@ -1290,6 +1504,10 @@
       populateModelFilter();
       populateYearFilter();
       render();
+      populateActiveBrandFilter();
+      populateActiveModelFilter();
+      populateActiveYearFilter();
+      renderActiveTable();
     }).catch(function(err){
       document.getElementById("subtitle").textContent = "Не удалось загрузить данные: "+err;
     });
@@ -1335,6 +1553,25 @@
       document.getElementById("cf-sort").value = "uplift_desc";
       populateComebackModelFilter();
       renderComebackTable();
+    });
+
+    document.getElementById("af-brand").addEventListener("change", function(){
+      populateActiveModelFilter();
+      renderActiveTable();
+    });
+    document.getElementById("af-model").addEventListener("change", renderActiveTable);
+    document.getElementById("af-year-from").addEventListener("change", onActiveYearFromChange);
+    document.getElementById("af-year-to").addEventListener("change", onActiveYearToChange);
+    document.getElementById("af-stage").addEventListener("change", renderActiveTable);
+    document.getElementById("af-sort").addEventListener("change", renderActiveTable);
+    document.getElementById("af-reset").addEventListener("click", function(){
+      document.getElementById("af-brand").value = "";
+      document.getElementById("af-year-from").value = "";
+      document.getElementById("af-year-to").value = "";
+      document.getElementById("af-stage").value = "";
+      document.getElementById("af-sort").value = "deadline_asc";
+      populateActiveModelFilter();
+      renderActiveTable();
     });
 
     // клик по строке "Марки и модели" -> подставляем марку/модель в
