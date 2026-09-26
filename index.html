@@ -190,6 +190,13 @@
     text-decoration:none; font-weight:500; white-space:nowrap;
   }
   .lot-link:hover{text-decoration:underline;}
+  .mark-btn{
+    background:none; border:0; cursor:pointer; font-size:1.35rem; line-height:1;
+    padding:2px 6px; color:var(--ink-muted); border-radius:6px;
+  }
+  .mark-btn:hover{color:var(--accent);}
+  .mark-btn[aria-pressed="true"]{color:var(--warn);}
+  .mark-btn:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
   .lot-link:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:3px;}
 
   .tablewrap{overflow-x:auto; margin-top:10px;}
@@ -217,7 +224,8 @@
     <button class="tab-btn active" id="tab-btn-overview" data-tab="overview" role="tab" aria-selected="true">Обзор</button>
     <button class="tab-btn" id="tab-btn-comeback" data-tab="comeback" role="tab" aria-selected="false">Не продались на 1-х торгах, но потом дороже<span class="tab-count" id="tab-comeback-count"></span></button>
     <button class="tab-btn" id="tab-btn-active" data-tab="active" role="tab" aria-selected="false">Сейчас на торгах<span class="tab-count" id="tab-active-count"></span></button>
-    <button class="tab-btn" id="tab-btn-favorites" data-tab="favorites" role="tab" aria-selected="false">Избранное<span class="tab-count" id="tab-favorites-count"></span></button>
+    <button class="tab-btn" id="tab-btn-favorites" data-tab="favorites" role="tab" aria-selected="false">Уведомления Telegram<span class="tab-count" id="tab-favorites-count"></span></button>
+    <button class="tab-btn" id="tab-btn-marked" data-tab="marked" role="tab" aria-selected="false">Избранное<span class="tab-count" id="tab-marked-count"></span></button>
   </div>
 
   <div id="tab-overview" class="tab-panel">
@@ -509,7 +517,7 @@
           <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Номер</th>
           <th>Причина(ы)</th><th>Уведомление</th>
           <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
-          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th><th>Отметка</th>
         </tr></thead>
         <tbody id="favorites-table"></tbody>
       </table>
@@ -517,6 +525,27 @@
     <p class="p-hint" id="favorites-lots-hint" style="margin:8px 0 0;">—</p>
   </div>
   </div><!-- /tab-favorites -->
+
+  <div id="tab-marked" class="tab-panel" hidden>
+  <div class="panel full">
+    <div class="p-head">
+      <h2 class="p-title">Избранное — лоты, которые вы отметили звёздочкой</h2>
+      <span class="p-hint" id="marked-hint">—</span>
+    </div>
+    <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там. Отметки хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Номер</th>
+          <th>Причина(ы)</th><th>Уведомление</th>
+          <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th><th>Отметка</th>
+        </tr></thead>
+        <tbody id="marked-table"></tbody>
+      </table>
+    </div>
+  </div>
+  </div><!-- /tab-marked -->
 
   <footer>
     Источник — официальный API torgi.gov.ru, категория «Автомобили и мототехника». Базовый сбор 12–13.09.2026, расширенный бэкафилл по торговым площадкам — 15.09.2026 (обход лимита API в 10 000 записей на статус через фильтр по площадке, отдельно для каждой из 8).
@@ -1554,8 +1583,8 @@
   var FAV_LOTS_CAP = 150;
   function renderFavoritesTable(){
     document.getElementById("favorites-hint").textContent = DATA.fav_n
-      ? fmtInt(DATA.fav_n)+" лотов в избранном"
-      : "избранное ещё не собрано - появится после первого уведомления в Telegram";
+      ? fmtInt(DATA.fav_n)+" лотов в архиве уведомлений"
+      : "архив ещё не собран - появится после первого уведомления в Telegram";
     var idx = favoritesFilteredIdx();
     var total = idx.length;
     var shown = idx.slice(0, FAV_LOTS_CAP);
@@ -1566,7 +1595,11 @@
     if(countBadge) countBadge.textContent = DATA.fav_n ? " "+fmtInt(DATA.fav_n) : "";
 
     var tbody = document.getElementById("favorites-table");
-    tbody.innerHTML = shown.map(function(i){
+    tbody.innerHTML = shown.map(favRowHtml).join("");
+    renderMarkedTable();
+  }
+
+  function favRowHtml(i){
       var brand = DATA.fav_brand[i] || "—", model = DATA.fav_model[i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
       var year = DATA.fav_year[i] ? DATA.fav_year[i] : "—";
@@ -1608,8 +1641,58 @@
         + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
+        + "<td>"+markBtnHtml(DATA.fav_id[i])+"</td>"
         + "</tr>";
-    }).join("");
+  }
+
+  // ---------- «Избранное» - личные отметки пользователя (звёздочка).
+  // Сайт статический (GitHub Pages), сервера нет - отметки лежат в
+  // localStorage этого браузера: {lot_id: "ГГГГ-ММ-ДД когда отмечен"}.
+  // Не переезжают между устройствами и пропадают при очистке данных сайта. ----------
+  var MARKS_KEY = "torgi_marked_v1";
+  var MARKS_MEM = {};
+  function loadMarks(){
+    try{
+      var raw = localStorage.getItem(MARKS_KEY);
+      MARKS_MEM = raw ? (JSON.parse(raw) || {}) : {};
+    }catch(e){ /* приватный режим / доступ закрыт - работаем только в памяти */ }
+  }
+  function saveMarks(){
+    try{ localStorage.setItem(MARKS_KEY, JSON.stringify(MARKS_MEM)); }catch(e){}
+  }
+  function isMarked(id){ return Object.prototype.hasOwnProperty.call(MARKS_MEM, id); }
+  function toggleMark(id){
+    if(isMarked(id)) delete MARKS_MEM[id];
+    else MARKS_MEM[id] = new Date().toISOString().slice(0,10);
+    saveMarks();
+  }
+  function markBtnHtml(id){
+    var on = isMarked(id);
+    return "<button class=\"mark-btn\" data-lot-id=\""+escapeHtml(id)+"\" aria-pressed=\""+(on?"true":"false")+"\""
+      + " title=\""+(on?"Убрать из избранного":"Добавить в избранное")+"\" aria-label=\""+(on?"Убрать из избранного":"Добавить в избранное")+"\">"
+      + (on ? "★" : "☆") + "</button>";
+  }
+  function renderMarkedTable(){
+    var idxById = {};
+    for(var i=0;i<DATA.fav_n;i++) idxById[DATA.fav_id[i]] = i;
+    var ids = Object.keys(MARKS_MEM);
+    var idxs = [], missing = 0;
+    ids.forEach(function(id){ if(idxById[id] != null) idxs.push(idxById[id]); else missing++; });
+    idxs.sort(function(a,b){ // недавно отмеченные сверху
+      return (MARKS_MEM[DATA.fav_id[b]]||"").localeCompare(MARKS_MEM[DATA.fav_id[a]]||"");
+    });
+    document.getElementById("marked-table").innerHTML = idxs.map(favRowHtml).join("");
+    var hint = idxs.length ? fmtInt(idxs.length)+" отмечено" : "пока ничего не отмечено — нажмите ☆ в последней колонке на вкладке «Уведомления Telegram»";
+    if(missing) hint += " · "+missing+" отмеченных лотов уже нет в архиве уведомлений";
+    document.getElementById("marked-hint").textContent = hint;
+    var badge = document.getElementById("tab-marked-count");
+    if(badge) badge.textContent = idxs.length ? " "+fmtInt(idxs.length) : "";
+  }
+  function onMarkClick(e){
+    var btn = e.target.closest(".mark-btn");
+    if(!btn) return;
+    toggleMark(btn.dataset.lotId);
+    renderFavoritesTable(); // перерисует и таблицу уведомлений, и «Избранное»
   }
 
   function escapeHtml(s){
@@ -1696,6 +1779,7 @@
     document.getElementById("tab-comeback").hidden = name !== "comeback";
     document.getElementById("tab-active").hidden = name !== "active";
     document.getElementById("tab-favorites").hidden = name !== "favorites";
+    document.getElementById("tab-marked").hidden = name !== "marked";
     // при возврате на "Обзор" графики Chart.js иногда не пересчитывают
     // размер после display:none -> resize() достаёт актуальную ширину контейнера
     if(name === "overview"){
@@ -1733,7 +1817,10 @@
       populateFavoritesBrandFilter();
       populateFavoritesModelFilter();
       populateFavoritesYearFilter();
+      loadMarks();
       renderFavoritesTable();
+      document.getElementById("favorites-table").addEventListener("click", onMarkClick);
+      document.getElementById("marked-table").addEventListener("click", onMarkClick);
     }).catch(function(err){
       document.getElementById("subtitle").textContent = "Не удалось загрузить данные: "+err;
     });
