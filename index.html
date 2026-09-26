@@ -203,6 +203,15 @@
   /* на узком экране во вкладке «Избранное» прячем второстепенные колонки
      (регион, номер, причины, дата уведомления, медиана Auto.ru), чтобы
      чек-лист и комментарий не уезжали далеко за правый край */
+  .year-input{
+    width:3.8em; text-align:center; font-family:"IBM Plex Mono",monospace; font-size:inherit;
+    padding:3px 4px; border:1px dashed var(--axis); border-radius:6px;
+    background:transparent; color:var(--ink);
+  }
+  .year-input::placeholder{color:var(--ink-muted);}
+  .year-input:focus-visible{outline:2px solid var(--blue); outline-offset:1px;}
+  .year-input.has-value{border:1px solid var(--accent); background:var(--accent-wash); color:var(--accent); font-weight:700;}
+  .year-input.invalid{border:1px solid var(--orange);}
   .cols-toggle{display:none; margin-top:8px; white-space:normal;}
   @media (max-width: 1240px){
     .cols-toggle{display:flex;}
@@ -1433,7 +1442,7 @@
       idx.push(i);
     }
     function valueRatioActive(i){
-      var rm = DATA.active_retail_median[i];
+      var rm = retailForLot("active", i).median;
       if(!rm) return Infinity;
       return DATA.active_price_start[i] / rm;
     }
@@ -1465,17 +1474,17 @@
     tbody.innerHTML = shown.map(function(i){
       var brand = DATA.active_brand[i] || "—", model = DATA.active_model[i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
-      var year = DATA.active_year[i] ? DATA.active_year[i] : "—";
       var stage = DATA.active_stage[i] || "—";
 
-      var retailMedian = DATA.active_retail_median[i];
+      var rr = retailForLot("active", i);
+      var retailMedian = rr.median;
       var vsRetail;
       if(!retailMedian){
         vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
       } else {
         var ratio = DATA.active_price_start[i] / retailMedian;
-        var retailN = DATA.active_retail_n[i];
-        var yearNote = DATA.active_retail_year_matched[i] ? "того же года ±1" : "модель в целом, год не учтён";
+        var retailN = rr.n;
+        var yearNote = retailYearNote(rr);
         vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
           + fmtPctDelta(ratio) + "</span>";
       }
@@ -1483,7 +1492,7 @@
       var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.active_id[i];
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
-        + "<td class=\"num\">"+year+"</td>"
+        + yearCellHtml(DATA.active_id[i], DATA.active_year[i])
         + "<td>"+(DATA.active_region[i] ? escapeHtml(DATA.active_region[i]) : "—")+"</td>"
         + "<td>"+escapeHtml(stage)+"</td>"
         + "<td class=\"mono\">"+fmtDate(DATA.active_first_seen[i])+"</td>"
@@ -1593,7 +1602,7 @@
       idx.push(i);
     }
     function valueRatioFav(i){
-      var rm = DATA.fav_retail_median[i];
+      var rm = retailForLot("fav", i).median;
       if(!rm) return Infinity;
       return DATA.fav_price_start[i] / rm;
     }
@@ -1626,8 +1635,6 @@
   function favRowHtml(i, extraCell){
       var brand = DATA.fav_brand[i] || "—", model = DATA.fav_model[i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
-      var year = DATA.fav_year[i] ? DATA.fav_year[i] : "—";
-
       var plate = DATA.fav_plate[i];
       var rating = DATA.fav_plate_rating[i];
       var plateCell = plate
@@ -1641,14 +1648,15 @@
         : "—";
       var reasonTitle = reasons.length ? " title=\""+escapeHtml(reasons.join("; "))+"\"" : "";
 
-      var retailMedian = DATA.fav_retail_median[i];
+      var rr = retailForLot("fav", i);
+      var retailMedian = rr.median;
       var vsRetail;
       if(!retailMedian){
         vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
       } else {
         var ratio = DATA.fav_price_start[i] / retailMedian;
-        var retailN = DATA.fav_retail_n[i];
-        var yearNote = DATA.fav_retail_year_matched[i] ? "того же года ±1" : "модель в целом, год не учтён";
+        var retailN = rr.n;
+        var yearNote = retailYearNote(rr);
         vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
           + fmtPctDelta(ratio) + "</span>";
       }
@@ -1656,7 +1664,7 @@
       var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.fav_id[i];
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
-        + "<td class=\"num\">"+year+"</td>"
+        + yearCellHtml(DATA.fav_id[i], DATA.fav_year[i])
         + "<td>"+(DATA.fav_region[i] ? escapeHtml(DATA.fav_region[i]) : "—")+"</td>"
         + "<td class=\"mono\">"+plateCell+"</td>"
         + "<td"+reasonTitle+">"+reasonCell+"</td>"
@@ -1674,6 +1682,72 @@
   // Сайт статический (GitHub Pages), сервера нет - отметки лежат в
   // localStorage этого браузера: {lot_id: "ГГГГ-ММ-ДД когда отмечен"}.
   // Не переезжают между устройствами и пропадают при очистке данных сайта. ----------
+  // ---------- Год, вписанный вручную там, где в данных торгов его нет.
+  // Хранится отдельно от звёздочек ({lot_id: 2011}) - работает и в
+  // «Уведомлениях Telegram», и в «Избранном», и в «Сейчас на торгах».
+  // Розничная медиана Auto.ru пересчитывается по этому году из
+  // DATA.retail_year_table (публикуется publish_dashboard.py). ----------
+  var YEARS_KEY = "torgi_year_v1";
+  var YEARS_MEM = {};
+  function loadYears(){
+    try{
+      var raw = localStorage.getItem(YEARS_KEY);
+      YEARS_MEM = raw ? (JSON.parse(raw) || {}) : {};
+    }catch(e){}
+  }
+  function saveYears(){
+    try{ localStorage.setItem(YEARS_KEY, JSON.stringify(YEARS_MEM)); }catch(e){}
+  }
+  function validYear(v){
+    if(!/^\d{4}$/.test(v)) return null;
+    var y = Number(v);
+    return (y >= 1950 && y <= new Date().getFullYear() + 1) ? y : null;
+  }
+  function yearCellHtml(id, dataYear){
+    if(dataYear) return "<td class=\"num\">"+dataYear+"</td>";
+    var v = YEARS_MEM[id];
+    return "<td class=\"num\"><input class=\"year-input"+(v ? " has-value" : "")+"\" type=\"text\" inputmode=\"numeric\" maxlength=\"4\""
+      + " placeholder=\"год\" data-lot-id=\""+escapeHtml(id)+"\" value=\""+(v || "")+"\""
+      + " title=\""+(v ? "Год вписан вручную (в данных торгов его нет)" : "Года в данных нет — впишите вручную, цены пересчитаются")+"\"></td>";
+  }
+  function onYearChange(e){
+    var el = e.target;
+    if(!el.classList || !el.classList.contains("year-input")) return;
+    var id = el.dataset.lotId, raw = el.value.trim();
+    if(raw === ""){ delete YEARS_MEM[id]; }
+    else {
+      var y = validYear(raw);
+      if(y === null){ el.classList.add("invalid"); el.title = "Нужен год из 4 цифр, например 2011"; return; }
+      YEARS_MEM[id] = y;
+    }
+    saveYears();
+    renderFavoritesTable(); // и «Уведомления», и «Избранное»
+    renderActiveTable();
+  }
+  function onYearKey(e){
+    if(e.key === "Enter" && e.target.classList && e.target.classList.contains("year-input")) e.target.blur();
+  }
+  // Розничная медиана лота: если года нет в данных, но он вписан вручную -
+  // берём готовое значение для этого года из retail_year_table (окно ±1 год,
+  // от 3 объявлений, иначе по модели в целом - та же логика, что на сервере).
+  function retailForLot(prefix, i){
+    var id = DATA[prefix+"_id"][i];
+    var manual = DATA[prefix+"_year"][i] ? null : (YEARS_MEM[id] || null);
+    var key = DATA[prefix+"_retail_key"] ? DATA[prefix+"_retail_key"][i] : null;
+    if(manual && key && DATA.retail_year_table && DATA.retail_year_table[key]){
+      var row = DATA.retail_year_table[key];
+      var e = row[String(manual)];
+      if(e) return {median:e[0], n:e[1], yearMatched:true, manual:manual};
+      if(row.all) return {median:row.all[0], n:row.all[1], yearMatched:false, manual:manual};
+    }
+    return {median: DATA[prefix+"_retail_median"][i], n: DATA[prefix+"_retail_n"][i],
+            yearMatched: DATA[prefix+"_retail_year_matched"][i], manual: manual};
+  }
+  function retailYearNote(rr){
+    if(rr.yearMatched) return rr.manual ? "по году "+rr.manual+", вписанному вручную (±1)" : "того же года ±1";
+    return rr.manual ? "год "+rr.manual+" вписан вручную, но объявлений этого года мало — по модели в целом" : "модель в целом, год не учтён";
+  }
+
   // Значение отметки: {d: "ГГГГ-ММ-ДД когда отмечен", k: {ключ_чекбокса: true}, t: "комментарий"}.
   // Первая версия (26.09.2026) хранила просто строку с датой - при загрузке
   // такие записи переводятся в новый вид, ничего не теряется.
@@ -1892,7 +1966,14 @@
       populateFavoritesModelFilter();
       populateFavoritesYearFilter();
       loadMarks();
+      loadYears();
       renderFavoritesTable();
+      renderActiveTable();
+      ["favorites-table","marked-table","active-table"].forEach(function(id){
+        var tb = document.getElementById(id);
+        tb.addEventListener("change", onYearChange);
+        tb.addEventListener("keydown", onYearKey);
+      });
       document.getElementById("favorites-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("change", onNotesChange);
