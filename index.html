@@ -212,6 +212,14 @@
   .year-input:focus-visible{outline:2px solid var(--blue); outline-offset:1px;}
   .year-input.has-value{border:1px solid var(--accent); background:var(--accent-wash); color:var(--accent); font-weight:700;}
   .year-input.invalid{border:1px solid var(--orange);}
+  .sync-box{margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:8px 12px; background:var(--surface-alt); font-size:13px;}
+  .sync-box summary{cursor:pointer;}
+  .sync-box #sync-status[data-kind="ok"]{color:var(--good);}
+  .sync-box #sync-status[data-kind="error"]{color:var(--orange);}
+  .sync-body{margin-top:8px;}
+  .sync-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px;}
+  .sync-row input{flex:1; min-width:220px; font:inherit; font-size:13px; padding:6px 8px; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:6px;}
+  .sync-row .reset{border:1px solid var(--border); border-radius:6px; padding:6px 10px; background:var(--surface);}
   .cols-toggle{display:none; margin-top:8px; white-space:normal;}
   @media (max-width: 1240px){
     .cols-toggle{display:flex;}
@@ -565,6 +573,15 @@
       <span class="p-hint" id="marked-hint">—</span>
     </div>
     <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там (если по лоту есть галочки или комментарий, сайт спросит подтверждение — они удалятся вместе со звёздочкой). В последней колонке — чек-лист (залог, ИП, запреты, НДС, ключи, документы) и комментарий. Отметки, галочки и комментарии хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
+    <details class="sync-box" id="sync-box">
+      <summary>Синхронизация между устройствами: <span id="sync-status" data-kind="off">…</span></summary>
+      <div class="sync-body">
+        <p class="p-hint">Чтобы звёздочки, галочки, комментарии и вписанные годы были одни и те же на телефоне и компьютере, они сохраняются в приватном репозитории GitHub <b>torgi-dashboard-notes</b>. Нужен токен доступа к нему: на github.com → <a class="lot-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Settings → Developer settings → Fine-grained tokens ↗</a> → Repository access: <i>Only select repositories</i> → torgi-dashboard-notes → Permissions → <i>Contents: Read and write</i>. Вставьте токен ниже — один раз на каждом устройстве (или скопируйте ссылку для другого устройства).</p>
+        <div class="sync-row"><input type="password" id="sync-token" placeholder="github_pat_…" autocomplete="off" spellcheck="false"><button class="reset" id="sync-save">Подключить</button></div>
+        <div class="sync-row"><button class="reset" id="sync-copy">Скопировать ссылку для другого устройства</button><button class="reset" id="sync-off">Отключить на этом устройстве</button></div>
+        <p class="p-hint" id="sync-copy-note" style="margin:4px 0 0;"></p>
+      </div>
+    </details>
     <label class="chk cols-toggle"><input type="checkbox" id="marked-all-cols"> Показать все колонки (регион, номер, причины, дата уведомления, медиана Auto.ru) — на узком экране понадобится прокрутка вправо</label>
     <div class="tablewrap">
       <table>
@@ -1687,17 +1704,11 @@
   // «Уведомлениях Telegram», и в «Избранном», и в «Сейчас на торгах».
   // Розничная медиана Auto.ru пересчитывается по этому году из
   // DATA.retail_year_table (публикуется publish_dashboard.py). ----------
-  var YEARS_KEY = "torgi_year_v1";
-  var YEARS_MEM = {};
-  function loadYears(){
-    try{
-      var raw = localStorage.getItem(YEARS_KEY);
-      YEARS_MEM = raw ? (JSON.parse(raw) || {}) : {};
-    }catch(e){}
-  }
-  function saveYears(){
-    try{ localStorage.setItem(YEARS_KEY, JSON.stringify(YEARS_MEM)); }catch(e){}
-  }
+  var YEARS_KEY = "torgi_year_v1";   // старый ключ, только для переноса в torgi_state_v2
+  var YEARS_MEM = {};                // {lot_id: год} - то, что рисуем
+  var YEARS_U = {};                  // {lot_id: время правки в мс} - для слияния между устройствами
+  function loadYears(){}             // всё грузит loadState() (вызывается из loadMarks)
+  function saveYears(){ persist(); }
   function validYear(v){
     if(!/^\d{4}$/.test(v)) return null;
     var y = Number(v);
@@ -1714,11 +1725,14 @@
     var el = e.target;
     if(!el.classList || !el.classList.contains("year-input")) return;
     var id = el.dataset.lotId, raw = el.value.trim();
-    if(raw === ""){ delete YEARS_MEM[id]; }
-    else {
+    if(raw === ""){
+      if(YEARS_MEM[id] === undefined) return;
+      delete YEARS_MEM[id]; delete YEARS_U[id]; TOMB.years[id] = Date.now();
+    } else {
       var y = validYear(raw);
       if(y === null){ el.classList.add("invalid"); el.title = "Нужен год из 4 цифр, например 2011"; return; }
-      YEARS_MEM[id] = y;
+      if(YEARS_MEM[id] === y) { renderFavoritesTable(); renderActiveTable(); return; }
+      YEARS_MEM[id] = y; YEARS_U[id] = Date.now(); delete TOMB.years[id];
     }
     saveYears();
     renderFavoritesTable(); // и «Уведомления», и «Избранное»
@@ -1757,20 +1771,8 @@
     ["pledge", "Залог\nостается"], ["ip", "ИП"], ["ban", "Запреты"],
     ["vat", "НДС"], ["keys", "Ключи"], ["docs", "Документы"]
   ];
-  function loadMarks(){
-    try{
-      var raw = localStorage.getItem(MARKS_KEY);
-      MARKS_MEM = raw ? (JSON.parse(raw) || {}) : {};
-    }catch(e){ /* приватный режим / доступ закрыт - работаем только в памяти */ }
-    Object.keys(MARKS_MEM).forEach(function(id){
-      var v = MARKS_MEM[id];
-      if(typeof v === "string") MARKS_MEM[id] = {d: v, k: {}, t: ""};
-      else if(!v || typeof v !== "object") MARKS_MEM[id] = {d: "", k: {}, t: ""};
-    });
-  }
-  function saveMarks(){
-    try{ localStorage.setItem(MARKS_KEY, JSON.stringify(MARKS_MEM)); }catch(e){}
-  }
+  function loadMarks(){ loadState(); }
+  function saveMarks(){ persist(); }
   function isMarked(id){ return Object.prototype.hasOwnProperty.call(MARKS_MEM, id); }
   function hasNotes(id){
     var m = MARKS_MEM[id];
@@ -1781,9 +1783,10 @@
     if(isMarked(id)){
       // комментарий и галочки живут только пока лот в избранном - не теряем их молча
       if(hasNotes(id) && !window.confirm("Убрать лот из избранного? Комментарий и галочки по нему будут удалены.")) return false;
-      delete MARKS_MEM[id];
+      delete MARKS_MEM[id]; TOMB.marks[id] = Date.now();
     } else {
-      MARKS_MEM[id] = {d: new Date().toISOString().slice(0,10), k: {}, t: ""};
+      MARKS_MEM[id] = {d: new Date().toISOString().slice(0,10), k: {}, t: "", u: Date.now()};
+      delete TOMB.marks[id];
     }
     saveMarks();
     return true;
@@ -1840,7 +1843,238 @@
     } else if(el.matches("textarea.notes-text")){
       MARKS_MEM[id].t = el.value;
     } else return;
+    MARKS_MEM[id].u = Date.now();
     saveMarks();
+  }
+
+  // ---------- Состояние (звёздочки, галочки, комментарии, годы) и синхронизация
+  // между устройствами. Сайт статический, поэтому общее хранилище - JSON-файл
+  // в ПРИВАТНОМ репозитории GitHub, который страница читает и пишет через
+  // GitHub API токеном пользователя (токен лежит только в localStorage этого
+  // браузера). Каждая запись несёт время правки u (мс); при слиянии побеждает
+  // более свежая, удаления помнятся "надгробиями" (TOMB) - иначе снятая с
+  // одного устройства звёздочка воскресала бы с другого. ----------
+  var STATE_KEY = "torgi_state_v2";
+  var TOMB = {marks: {}, years: {}};
+  function emptyState(){ return {v: 2, marks: {}, years: {}, tomb: {marks: {}, years: {}}}; }
+  function normalizeState(s){
+    var o = emptyState();
+    if(!s || typeof s !== "object") return o;
+    o.marks = (s.marks && typeof s.marks === "object") ? s.marks : {};
+    o.years = (s.years && typeof s.years === "object") ? s.years : {};
+    var t = s.tomb || {};
+    o.tomb.marks = t.marks || {}; o.tomb.years = t.years || {};
+    return o;
+  }
+  function getState(){
+    var st = emptyState();
+    st.marks = JSON.parse(JSON.stringify(MARKS_MEM));
+    Object.keys(YEARS_MEM).forEach(function(id){ st.years[id] = {y: YEARS_MEM[id], u: YEARS_U[id] || 0}; });
+    st.tomb = JSON.parse(JSON.stringify(TOMB));
+    return st;
+  }
+  function applyState(st){
+    st = normalizeState(st);
+    MARKS_MEM = st.marks;
+    YEARS_MEM = {}; YEARS_U = {};
+    Object.keys(st.years).forEach(function(id){ YEARS_MEM[id] = st.years[id].y; YEARS_U[id] = st.years[id].u || 0; });
+    TOMB = st.tomb;
+  }
+  function canon(o){
+    if(Array.isArray(o)) return "[" + o.map(canon).join(",") + "]";
+    if(o && typeof o === "object") return "{" + Object.keys(o).sort().map(function(k){ return JSON.stringify(k)+":"+canon(o[k]); }).join(",") + "}";
+    return JSON.stringify(o);
+  }
+  function mergeStates(a, b){
+    a = normalizeState(a); b = normalizeState(b);
+    var out = emptyState();
+    ["marks", "years"].forEach(function(kind){
+      var ids = {};
+      [a, b].forEach(function(s){
+        Object.keys(s[kind]).forEach(function(id){ ids[id] = 1; });
+        Object.keys(s.tomb[kind]).forEach(function(id){ ids[id] = 1; });
+      });
+      Object.keys(ids).forEach(function(id){
+        var best = null;
+        function consider(u, item){
+          // при равном времени удаление сильнее (item == null)
+          if(best === null || u > best.u || (u === best.u && item === null)) best = {u: u, item: item};
+        }
+        [a, b].forEach(function(s){
+          var it = s[kind][id];
+          if(it && typeof it === "object") consider(it.u || 0, it);
+          var tu = s.tomb[kind][id];
+          if(tu !== undefined) consider(tu, null);
+        });
+        if(best.item) out[kind][id] = best.item; else out.tomb[kind][id] = best.u;
+      });
+    });
+    return out;
+  }
+  function saveLocalOnly(){
+    try{ localStorage.setItem(STATE_KEY, JSON.stringify(getState())); }catch(e){ /* приватный режим - работаем в памяти */ }
+  }
+  function persist(){ saveLocalOnly(); scheduleSync(1500); }
+  function loadState(){
+    var st = null;
+    try{
+      var raw = localStorage.getItem(STATE_KEY);
+      if(raw) st = normalizeState(JSON.parse(raw));
+    }catch(e){}
+    if(!st){
+      // первый запуск новой версии: переносим то, что было в старых ключах (v1)
+      st = emptyState();
+      var now = Date.now();
+      try{
+        var m = JSON.parse(localStorage.getItem(MARKS_KEY) || "{}") || {};
+        Object.keys(m).forEach(function(id){
+          var v = m[id];
+          if(typeof v === "string") v = {d: v, k: {}, t: ""};
+          else if(!v || typeof v !== "object") v = {d: "", k: {}, t: ""};
+          v.u = v.u || now; st.marks[id] = v;
+        });
+        var y = JSON.parse(localStorage.getItem(YEARS_KEY) || "{}") || {};
+        Object.keys(y).forEach(function(id){ st.years[id] = {y: y[id], u: now}; });
+      }catch(e){}
+    }
+    applyState(st);
+    saveLocalOnly();
+  }
+
+  var SYNC_OWNER = "medvedevzhenyaa", SYNC_REPO = "torgi-dashboard-notes", SYNC_PATH = "notes.json";
+  var SYNC_TOKEN_KEY = "torgi_sync_token_v1";
+  var SYNC = {token: "", inflight: false, again: false, timer: null, pendingRender: false, last: null};
+  function b64enc(str){
+    var bytes = new TextEncoder().encode(str), bin = "";
+    for(var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function b64dec(b64){
+    var bin = atob(b64.replace(/\s/g, "")), bytes = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function ghUrl(){ return "https://api.github.com/repos/"+SYNC_OWNER+"/"+SYNC_REPO+"/contents/"+SYNC_PATH; }
+  function ghHeaders(extra){
+    var h = {"Authorization": "Bearer "+SYNC.token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"};
+    if(extra) Object.keys(extra).forEach(function(k){ h[k] = extra[k]; });
+    return h;
+  }
+  function ghGet(){
+    return fetch(ghUrl(), {headers: ghHeaders(), cache: "no-store"}).then(function(r){
+      if(r.status === 404) return {sha: null, state: emptyState()};
+      if(r.status === 401 || r.status === 403) throw new Error("токен не подошёл или у него нет доступа к репозиторию "+SYNC_REPO);
+      if(!r.ok) throw new Error("GitHub ответил "+r.status);
+      return r.json().then(function(j){
+        var st = emptyState();
+        try{ st = normalizeState(JSON.parse(b64dec(j.content))); }catch(e){ throw new Error("файл notes.json повреждён"); }
+        return {sha: j.sha, state: st};
+      });
+    });
+  }
+  function ghPut(state, sha){
+    var body = {message: "Синхронизация отметок дашборда", content: b64enc(JSON.stringify(state))};
+    if(sha) body.sha = sha;
+    return fetch(ghUrl(), {method: "PUT", headers: ghHeaders({"Content-Type": "application/json"}), body: JSON.stringify(body)}).then(function(r){
+      if(r.status === 409 || r.status === 422) return "conflict"; // кто-то записал раньше нас - перечитаем и слепим заново
+      if(r.status === 401 || r.status === 403) throw new Error("токен не подошёл или у него нет права записи (Contents: Read and write)");
+      if(!r.ok) throw new Error("GitHub ответил "+r.status);
+      return "ok";
+    });
+  }
+  function setSyncStatus(kind, msg){
+    var el = document.getElementById("sync-status");
+    if(!el) return;
+    var t = {
+      off: "выключена — отметки хранятся только в этом браузере",
+      busy: "синхронизация…",
+      ok: "включена, сохранено в " + (SYNC.last ? SYNC.last.toTimeString().slice(0,5) : ""),
+      error: "ошибка: " + (msg || "нет связи") + " (пока данные только на этом устройстве)"
+    }[kind];
+    el.textContent = t;
+    el.dataset.kind = kind;
+  }
+  function renderAllLots(){
+    renderFavoritesTable();
+    renderActiveTable();
+  }
+  function requestRender(){
+    var a = document.activeElement;
+    var editing = a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && (a.type === "text" || a.type === "checkbox")));
+    if(editing && a.closest && a.closest("tbody")){ SYNC.pendingRender = true; return; } // не сбиваем ввод - перерисуем после ухода из поля
+    renderAllLots();
+  }
+  function scheduleSync(ms){
+    if(!SYNC.token) return;
+    clearTimeout(SYNC.timer);
+    SYNC.timer = setTimeout(syncNow, ms);
+  }
+  function syncNow(){
+    if(!SYNC.token){ setSyncStatus("off"); return Promise.resolve(); }
+    if(SYNC.inflight){ SYNC.again = true; return Promise.resolve(); }
+    SYNC.inflight = true; setSyncStatus("busy");
+    var attempts = 0;
+    function attempt(){
+      attempts++;
+      return ghGet().then(function(remote){
+        var local = getState();
+        var merged = mergeStates(local, remote.state);
+        if(canon(merged) !== canon(local)){ applyState(merged); saveLocalOnly(); requestRender(); }
+        if(canon(merged) === canon(remote.state)) return;   // на GitHub уже то же самое
+        return ghPut(merged, remote.sha).then(function(res){
+          if(res === "conflict"){ if(attempts < 4) return attempt(); throw new Error("не удалось записать (конфликт версий)"); }
+        });
+      });
+    }
+    return attempt().then(function(){ SYNC.last = new Date(); setSyncStatus("ok"); })
+      .catch(function(e){ setSyncStatus("error", (e && e.message === "Failed to fetch") ? "нет связи с GitHub" : (e && e.message)); })
+      .then(function(){ SYNC.inflight = false; if(SYNC.again){ SYNC.again = false; scheduleSync(300); } });
+  }
+  function setSyncToken(tok){
+    SYNC.token = (tok || "").trim();
+    try{
+      if(SYNC.token) localStorage.setItem(SYNC_TOKEN_KEY, SYNC.token);
+      else localStorage.removeItem(SYNC_TOKEN_KEY);
+    }catch(e){}
+  }
+  function startSync(){
+    var m = location.hash.match(/^#sync=(.+)$/); // ссылка «для другого устройства» несёт токен во фрагменте (на сервер не уходит)
+    if(m){
+      try{ setSyncToken(decodeURIComponent(m[1])); }catch(e){}
+      history.replaceState(null, "", location.pathname + location.search);
+    } else {
+      try{ SYNC.token = localStorage.getItem(SYNC_TOKEN_KEY) || ""; }catch(e){}
+    }
+    var input = document.getElementById("sync-token");
+    document.getElementById("sync-save").addEventListener("click", function(){
+      var v = input.value.trim();
+      if(!v){ setSyncStatus("error", "вставьте токен"); return; }
+      setSyncToken(v); input.value = ""; syncNow();
+    });
+    document.getElementById("sync-off").addEventListener("click", function(){
+      setSyncToken(""); clearTimeout(SYNC.timer); setSyncStatus("off");
+    });
+    document.getElementById("sync-copy").addEventListener("click", function(){
+      if(!SYNC.token){ setSyncStatus("error", "сначала подключите синхронизацию"); return; }
+      var link = location.origin + location.pathname + "#sync=" + encodeURIComponent(SYNC.token);
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function(){
+        var st = document.getElementById("sync-copy-note"); if(st){ st.textContent = "Ссылка скопирована. Откройте её на другом устройстве — токен подхватится сам."; }
+      }, function(){ window.prompt("Скопируйте ссылку:", link); });
+    });
+    // отложенная перерисовка, если пришли чужие правки, пока пользователь вводил текст
+    document.addEventListener("focusout", function(){
+      setTimeout(function(){
+        if(SYNC.pendingRender){
+          var a = document.activeElement;
+          if(!(a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && (a.type === "text" || a.type === "checkbox"))))){
+            SYNC.pendingRender = false; renderAllLots();
+          }
+        }
+      }, 0);
+    });
+    document.addEventListener("visibilitychange", function(){ if(!document.hidden) syncNow(); });
+    setInterval(function(){ if(!document.hidden) syncNow(); }, 60000);
+    if(SYNC.token) syncNow(); else setSyncStatus("off");
   }
 
   function escapeHtml(s){
@@ -1974,6 +2208,7 @@
         tb.addEventListener("change", onYearChange);
         tb.addEventListener("keydown", onYearKey);
       });
+      startSync();
       document.getElementById("favorites-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("change", onNotesChange);
