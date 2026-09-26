@@ -198,8 +198,21 @@
   .mark-btn[aria-pressed="true"]{color:var(--warn);}
   .mark-btn:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
   .notes-cell{min-width:240px;}
-  .chk-grid{display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; margin-bottom:6px;}
-  .chk{display:flex; align-items:center; gap:4px; font-size:.85rem; white-space:nowrap; cursor:pointer;}
+  .chk-grid{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:2px 12px; margin-bottom:6px;}
+  .chk{display:flex; align-items:center; gap:4px; font-size:.85rem; cursor:pointer; overflow-wrap:anywhere;}
+  /* на узком экране во вкладке «Избранное» прячем второстепенные колонки
+     (регион, номер, причины, дата уведомления, медиана Auto.ru), чтобы
+     чек-лист и комментарий не уезжали далеко за правый край */
+  .cols-toggle{display:none; margin-top:8px;}
+  @media (max-width: 1240px){
+    .cols-toggle{display:flex;}
+    #tab-marked:not(.show-all) th:nth-child(3), #tab-marked:not(.show-all) td:nth-child(3),
+    #tab-marked:not(.show-all) th:nth-child(4), #tab-marked:not(.show-all) td:nth-child(4),
+    #tab-marked:not(.show-all) th:nth-child(5), #tab-marked:not(.show-all) td:nth-child(5),
+    #tab-marked:not(.show-all) th:nth-child(6), #tab-marked:not(.show-all) td:nth-child(6),
+    #tab-marked:not(.show-all) th:nth-child(8), #tab-marked:not(.show-all) td:nth-child(8){display:none;}
+  }
+  @media (max-width: 860px){ .notes-cell{min-width:200px;} }
   .chk input{accent-color:var(--accent); cursor:pointer;}
   .notes-text{
     width:100%; min-height:44px; resize:vertical; font:inherit; font-size:.85rem;
@@ -543,6 +556,7 @@
       <span class="p-hint" id="marked-hint">—</span>
     </div>
     <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там (если по лоту есть галочки или комментарий, сайт спросит подтверждение — они удалятся вместе со звёздочкой). В последней колонке — чек-лист (залог, ИП, запреты, НДС, ключи, документы) и комментарий. Отметки, галочки и комментарии хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
+    <label class="chk cols-toggle"><input type="checkbox" id="marked-all-cols"> Показать все колонки (регион, номер, причины, дата уведомления, медиана Auto.ru) — на узком экране понадобится прокрутка вправо</label>
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -1882,6 +1896,9 @@
       document.getElementById("favorites-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("change", onNotesChange);
+      document.getElementById("marked-all-cols").addEventListener("change", function(e){
+        document.getElementById("tab-marked").classList.toggle("show-all", e.target.checked);
+      });
       document.getElementById("marked-table").addEventListener("input", onNotesChange);
     }).catch(function(err){
       document.getElementById("subtitle").textContent = "Не удалось загрузить данные: "+err;
