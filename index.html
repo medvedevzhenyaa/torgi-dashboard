@@ -197,6 +197,16 @@
   .mark-btn:hover{color:var(--accent);}
   .mark-btn[aria-pressed="true"]{color:var(--warn);}
   .mark-btn:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
+  .notes-cell{min-width:240px;}
+  .chk-grid{display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; margin-bottom:6px;}
+  .chk{display:flex; align-items:center; gap:4px; font-size:.85rem; white-space:nowrap; cursor:pointer;}
+  .chk input{accent-color:var(--accent); cursor:pointer;}
+  .notes-text{
+    width:100%; min-height:44px; resize:vertical; font:inherit; font-size:.85rem;
+    color:var(--ink); background:var(--surface-alt); border:1px solid var(--border);
+    border-radius:6px; padding:6px 8px;
+  }
+  .notes-text:focus-visible{outline:2px solid var(--blue); outline-offset:1px;}
   .lot-link:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:3px;}
 
   .tablewrap{overflow-x:auto; margin-top:10px;}
@@ -532,14 +542,14 @@
       <h2 class="p-title">Избранное — лоты, которые вы отметили звёздочкой</h2>
       <span class="p-hint" id="marked-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там. Отметки хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
+    <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там (если по лоту есть галочки или комментарий, сайт спросит подтверждение — они удалятся вместе со звёздочкой). В последней колонке — чек-лист (залог, ИП, запреты, НДС, ключи, документы) и комментарий. Отметки, галочки и комментарии хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
     <div class="tablewrap">
       <table>
         <thead><tr>
           <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Номер</th>
           <th>Причина(ы)</th><th>Уведомление</th>
           <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
-          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th><th>Отметка</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th><th>Отметка</th><th>Чек-лист и комментарий</th>
         </tr></thead>
         <tbody id="marked-table"></tbody>
       </table>
@@ -1595,11 +1605,11 @@
     if(countBadge) countBadge.textContent = DATA.fav_n ? " "+fmtInt(DATA.fav_n) : "";
 
     var tbody = document.getElementById("favorites-table");
-    tbody.innerHTML = shown.map(favRowHtml).join("");
+    tbody.innerHTML = shown.map(function(i){ return favRowHtml(i); }).join("");
     renderMarkedTable();
   }
 
-  function favRowHtml(i){
+  function favRowHtml(i, extraCell){
       var brand = DATA.fav_brand[i] || "—", model = DATA.fav_model[i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
       var year = DATA.fav_year[i] ? DATA.fav_year[i] : "—";
@@ -1642,6 +1652,7 @@
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
         + "<td>"+markBtnHtml(DATA.fav_id[i])+"</td>"
+        + (extraCell || "")
         + "</tr>";
   }
 
@@ -1649,22 +1660,55 @@
   // Сайт статический (GitHub Pages), сервера нет - отметки лежат в
   // localStorage этого браузера: {lot_id: "ГГГГ-ММ-ДД когда отмечен"}.
   // Не переезжают между устройствами и пропадают при очистке данных сайта. ----------
+  // Значение отметки: {d: "ГГГГ-ММ-ДД когда отмечен", k: {ключ_чекбокса: true}, t: "комментарий"}.
+  // Первая версия (26.09.2026) хранила просто строку с датой - при загрузке
+  // такие записи переводятся в новый вид, ничего не теряется.
   var MARKS_KEY = "torgi_marked_v1";
   var MARKS_MEM = {};
+  var CHECKLIST = [
+    ["pledge", "Залог остается"], ["ip", "ИП"], ["ban", "Запреты"],
+    ["vat", "НДС"], ["keys", "Ключи"], ["docs", "Документы"]
+  ];
   function loadMarks(){
     try{
       var raw = localStorage.getItem(MARKS_KEY);
       MARKS_MEM = raw ? (JSON.parse(raw) || {}) : {};
     }catch(e){ /* приватный режим / доступ закрыт - работаем только в памяти */ }
+    Object.keys(MARKS_MEM).forEach(function(id){
+      var v = MARKS_MEM[id];
+      if(typeof v === "string") MARKS_MEM[id] = {d: v, k: {}, t: ""};
+      else if(!v || typeof v !== "object") MARKS_MEM[id] = {d: "", k: {}, t: ""};
+    });
   }
   function saveMarks(){
     try{ localStorage.setItem(MARKS_KEY, JSON.stringify(MARKS_MEM)); }catch(e){}
   }
   function isMarked(id){ return Object.prototype.hasOwnProperty.call(MARKS_MEM, id); }
+  function hasNotes(id){
+    var m = MARKS_MEM[id];
+    if(!m) return false;
+    return !!(m.t && m.t.trim()) || Object.keys(m.k || {}).some(function(k){ return m.k[k]; });
+  }
   function toggleMark(id){
-    if(isMarked(id)) delete MARKS_MEM[id];
-    else MARKS_MEM[id] = new Date().toISOString().slice(0,10);
+    if(isMarked(id)){
+      // комментарий и галочки живут только пока лот в избранном - не теряем их молча
+      if(hasNotes(id) && !window.confirm("Убрать лот из избранного? Комментарий и галочки по нему будут удалены.")) return false;
+      delete MARKS_MEM[id];
+    } else {
+      MARKS_MEM[id] = {d: new Date().toISOString().slice(0,10), k: {}, t: ""};
+    }
     saveMarks();
+    return true;
+  }
+  function notesCellHtml(id){
+    var m = MARKS_MEM[id] || {k: {}, t: ""};
+    var boxes = CHECKLIST.map(function(c){
+      return "<label class=\"chk\"><input type=\"checkbox\" data-lot-id=\""+escapeHtml(id)+"\" data-key=\""+c[0]+"\""
+        + (m.k && m.k[c[0]] ? " checked" : "") + "> "+escapeHtml(c[1])+"</label>";
+    }).join("");
+    return "<td class=\"notes-cell\"><div class=\"chk-grid\">"+boxes+"</div>"
+      + "<textarea class=\"notes-text\" rows=\"2\" placeholder=\"Комментарий\" data-lot-id=\""+escapeHtml(id)+"\">"
+      + escapeHtml(m.t || "") + "</textarea></td>";
   }
   function markBtnHtml(id){
     var on = isMarked(id);
@@ -1679,9 +1723,11 @@
     var idxs = [], missing = 0;
     ids.forEach(function(id){ if(idxById[id] != null) idxs.push(idxById[id]); else missing++; });
     idxs.sort(function(a,b){ // недавно отмеченные сверху
-      return (MARKS_MEM[DATA.fav_id[b]]||"").localeCompare(MARKS_MEM[DATA.fav_id[a]]||"");
+      return (MARKS_MEM[DATA.fav_id[b]].d||"").localeCompare(MARKS_MEM[DATA.fav_id[a]].d||"");
     });
-    document.getElementById("marked-table").innerHTML = idxs.map(favRowHtml).join("");
+    document.getElementById("marked-table").innerHTML = idxs.map(function(i){
+      return favRowHtml(i, notesCellHtml(DATA.fav_id[i]));
+    }).join("");
     var hint = idxs.length ? fmtInt(idxs.length)+" отмечено" : "пока ничего не отмечено — нажмите ☆ в последней колонке на вкладке «Уведомления Telegram»";
     if(missing) hint += " · "+missing+" отмеченных лотов уже нет в архиве уведомлений";
     document.getElementById("marked-hint").textContent = hint;
@@ -1691,8 +1737,22 @@
   function onMarkClick(e){
     var btn = e.target.closest(".mark-btn");
     if(!btn) return;
-    toggleMark(btn.dataset.lotId);
+    if(toggleMark(btn.dataset.lotId) === false) return;
     renderFavoritesTable(); // перерисует и таблицу уведомлений, и «Избранное»
+  }
+  // чекбоксы и комментарий сохраняем на месте, БЕЗ перерисовки таблицы -
+  // иначе при наборе текста терялся бы фокус
+  function onNotesChange(e){
+    var el = e.target;
+    var id = el.dataset && el.dataset.lotId;
+    if(!id || !MARKS_MEM[id]) return;
+    if(el.matches("input[type=checkbox][data-key]")){
+      MARKS_MEM[id].k = MARKS_MEM[id].k || {};
+      MARKS_MEM[id].k[el.dataset.key] = el.checked;
+    } else if(el.matches("textarea.notes-text")){
+      MARKS_MEM[id].t = el.value;
+    } else return;
+    saveMarks();
   }
 
   function escapeHtml(s){
@@ -1821,6 +1881,8 @@
       renderFavoritesTable();
       document.getElementById("favorites-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("click", onMarkClick);
+      document.getElementById("marked-table").addEventListener("change", onNotesChange);
+      document.getElementById("marked-table").addEventListener("input", onNotesChange);
     }).catch(function(err){
       document.getElementById("subtitle").textContent = "Не удалось загрузить данные: "+err;
     });
