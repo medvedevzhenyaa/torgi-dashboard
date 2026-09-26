@@ -203,7 +203,7 @@
   /* на узком экране во вкладке «Избранное» прячем второстепенные колонки
      (регион, номер, причины, дата уведомления, медиана Auto.ru), чтобы
      чек-лист и комментарий не уезжали далеко за правый край */
-  .cols-toggle{display:none; margin-top:8px;}
+  .cols-toggle{display:none; margin-top:8px; white-space:normal;}
   @media (max-width: 1240px){
     .cols-toggle{display:flex;}
     #tab-marked:not(.show-all) th:nth-child(3), #tab-marked:not(.show-all) td:nth-child(3),
@@ -1680,7 +1680,7 @@
   var MARKS_KEY = "torgi_marked_v1";
   var MARKS_MEM = {};
   var CHECKLIST = [
-    ["pledge", "Залог остается"], ["ip", "ИП"], ["ban", "Запреты"],
+    ["pledge", "Залог\nостается"], ["ip", "ИП"], ["ban", "Запреты"],
     ["vat", "НДС"], ["keys", "Ключи"], ["docs", "Документы"]
   ];
   function loadMarks(){
@@ -1718,7 +1718,7 @@
     var m = MARKS_MEM[id] || {k: {}, t: ""};
     var boxes = CHECKLIST.map(function(c){
       return "<label class=\"chk\"><input type=\"checkbox\" data-lot-id=\""+escapeHtml(id)+"\" data-key=\""+c[0]+"\""
-        + (m.k && m.k[c[0]] ? " checked" : "") + "> "+escapeHtml(c[1])+"</label>";
+        + (m.k && m.k[c[0]] ? " checked" : "") + "> "+escapeHtml(c[1]).replace("\n","<br>")+"</label>";
     }).join("");
     return "<td class=\"notes-cell\"><div class=\"chk-grid\">"+boxes+"</div>"
       + "<textarea class=\"notes-text\" rows=\"2\" placeholder=\"Комментарий\" data-lot-id=\""+escapeHtml(id)+"\">"
