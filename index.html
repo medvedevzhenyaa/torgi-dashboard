@@ -477,7 +477,7 @@
       <h2 class="p-title">Лоты, которые торгуются прямо сейчас</h2>
       <span class="p-hint" id="active-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">В отличие от вкладки «Обзор» (только уже завершённые торги — продано/не продано), здесь — снимок ещё ИДУЩИХ торгов: приём заявок не завершён, исхода ещё нет. Обновляется на каждом ежедневном прогоне, историю прошлых снимков не хранит — только то, что видно на сайте прямо сейчас.</p>
+    <p class="p-hint" style="margin:6px 0 0;">В отличие от вкладки «Обзор» (только уже завершённые торги — продано/не продано), здесь — снимок ещё ИДУЩИХ торгов: приём заявок не завершён, исхода ещё нет. Обновляется на каждом ежедневном прогоне, историю прошлых снимков не хранит — только то, что видно на сайте прямо сейчас. Звёздочкой в последней колонке лот можно добавить в «Избранное» ещё до того, как он попадёт в «Уведомления Telegram» — если торги завершатся раньше уведомления, лот всё равно останется в «Избранном».</p>
 
     <div class="filters">
       <span class="flabel">Марка</span>
@@ -512,7 +512,7 @@
           <th>Марка и модель</th><th class="num">Год</th><th>Регион</th><th>Стадия</th>
           <th>Появился</th><th>Окончание приёма заявок</th>
           <th class="num">Старт, ₽</th><th class="num">Медиана Auto.ru, ₽</th>
-          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th>
+          <th>Торги vs рынок (Auto.ru)</th><th>Лот</th><th>Отметка</th>
         </tr></thead>
         <tbody id="active-table"></tbody>
       </table>
@@ -578,7 +578,7 @@
       <h2 class="p-title">Избранное — лоты, которые вы отметили звёздочкой</h2>
       <span class="p-hint" id="marked-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладке «Уведомления Telegram»; снять — нажатием на звёздочку здесь или там (если по лоту есть галочки или комментарий, сайт спросит подтверждение — они удалятся вместе со звёздочкой). В последней колонке — чек-лист (залог, ИП, запреты, НДС, ключи, документы) и комментарий. Отметки, галочки и комментарии хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
+    <p class="p-hint" style="margin:6px 0 0;">Отметить лот можно звёздочкой в последней колонке на вкладках «Уведомления Telegram» и «Сейчас на торгах»; снять — нажатием на звёздочку здесь или там (если по лоту есть галочки или комментарий, сайт спросит подтверждение — они удалятся вместе со звёздочкой). У лотов, отмеченных из «Сейчас на торгах» (уведомления ещё не было), вместо номера и причины показаны «—» и стадия торгов. В последней колонке — чек-лист (залог, ИП, запреты, НДС, ключи, документы) и комментарий. Отметки, галочки и комментарии хранятся в этом браузере на этом устройстве (на другом устройстве или после очистки данных сайта они не появятся).</p>
     <details class="sync-box" id="sync-box">
       <summary>Синхронизация между устройствами: <span id="sync-status" data-kind="off">…</span></summary>
       <div class="sync-body">
@@ -1494,9 +1494,16 @@
     if(countBadge) countBadge.textContent = DATA.active_n ? " "+fmtInt(DATA.active_n) : "";
 
     var tbody = document.getElementById("active-table");
-    tbody.innerHTML = shown.map(function(i){
+    tbody.innerHTML = shown.map(function(i){ return activeRowHtml(i); }).join("");
+  }
+  // «Сейчас на торгах» - свой набор колонок (стадия/появился/дедлайн, а
+  // не номер/причины/уведомление, как у "Избранное"-подобных таблиц),
+  // но звёздочка и год работают так же (lotRowHtml переиспользует retail
+  // и год - см. ниже).
+  function activeRowHtml(i){
       var brand = DATA.active_brand[i] || "—", model = DATA.active_model[i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
+      var id = DATA.active_id[i];
       var stage = DATA.active_stage[i] || "—";
 
       var rr = retailForLot("active", i);
@@ -1512,20 +1519,20 @@
           + fmtPctDelta(ratio) + "</span>";
       }
 
-      var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.active_id[i];
+      var url = "https://torgi.gov.ru/new/public/lots/lot/" + id;
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
-        + yearCellHtml(DATA.active_id[i], DATA.active_year[i])
+        + yearCellHtml(id, DATA.active_year[i])
         + "<td>"+(DATA.active_region[i] ? escapeHtml(DATA.active_region[i]) : "—")+"</td>"
         + "<td>"+escapeHtml(stage)+"</td>"
         + "<td class=\"mono\">"+fmtDate(DATA.active_first_seen[i])+"</td>"
         + "<td class=\"mono\">"+fmtDate(DATA.active_deadline[i])+"</td>"
-        + "<td class=\"num\">"+fmtInt(DATA.active_price_start[i])+"</td>"
+        + "<td class=\"num\">"+(DATA.active_price_start[i] ? fmtInt(DATA.active_price_start[i]) : "—")+"</td>"
         + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
+        + "<td>"+markBtnHtml(id)+"</td>"
         + "</tr>";
-    }).join("");
   }
 
   // ---------- «Избранное» - лоты, которые когда-либо ушли в Telegram
@@ -1655,51 +1662,68 @@
     renderMarkedTable();
   }
 
-  function favRowHtml(i, extraCell){
-      var brand = DATA.fav_brand[i] || "—", model = DATA.fav_model[i];
+  // Строка таблицы лотов, общая для «Уведомлений Telegram» (prefix="fav")
+  // и «Сейчас на торгах» (prefix="active") - звёздочку избранного и
+  // ввод года теперь можно ставить на обеих вкладках. У "fav" есть
+  // номер/причины/дата уведомления, у "active" вместо этого - стадия
+  // торгов и дата появления лота (уведомления не было, потому что лот
+  // ещё не прошёл критерии на момент показа).
+  function lotRowHtml(prefix, i, extraCell){
+      var brand = DATA[prefix+"_brand"][i] || "—", model = DATA[prefix+"_model"][i];
       var title = model ? escapeHtml(brand)+" "+escapeHtml(model) : escapeHtml(brand);
-      var plate = DATA.fav_plate[i];
-      var rating = DATA.fav_plate_rating[i];
-      var plateCell = plate
-        ? escapeHtml(plate) + (rating ? " " + "★".repeat(rating) : "")
-        : "—";
+      var id = DATA[prefix+"_id"][i];
+      var priceStart = DATA[prefix+"_price_start"][i];
 
-      var tags = DATA.fav_tags[i] || [];
-      var reasons = DATA.fav_reasons[i] || [];
-      var reasonCell = tags.length
-        ? tags.map(function(t){ return "<span class=\"pill neutral\">"+escapeHtml(FAV_TAG_LABEL[t]||t)+"</span>"; }).join(" ")
-        : "—";
-      var reasonTitle = reasons.length ? " title=\""+escapeHtml(reasons.join("; "))+"\"" : "";
+      var thirdCell, reasonCell, reasonTitle, dateCell;
+      if(prefix === "fav"){
+        var plate = DATA.fav_plate[i];
+        var rating = DATA.fav_plate_rating[i];
+        thirdCell = "<td class=\"mono\">"+(plate ? escapeHtml(plate) + (rating ? " " + "★".repeat(rating) : "") : "—")+"</td>";
+        var tags = DATA.fav_tags[i] || [];
+        var reasons = DATA.fav_reasons[i] || [];
+        reasonCell = tags.length
+          ? tags.map(function(t){ return "<span class=\"pill neutral\">"+escapeHtml(FAV_TAG_LABEL[t]||t)+"</span>"; }).join(" ")
+          : "—";
+        reasonTitle = reasons.length ? " title=\""+escapeHtml(reasons.join("; "))+"\"" : "";
+        dateCell = fmtDate(DATA.fav_notified_at[i]);
+      } else {
+        thirdCell = "<td>—</td>"; // у "Сейчас на торгах" гос. номер не собирается
+        var stage = DATA.active_stage[i];
+        reasonCell = stage ? "<span class=\"pill neutral\">"+escapeHtml(stage)+"</span>" : "—";
+        reasonTitle = stage ? " title=\""+escapeHtml(stage)+"\"" : "";
+        dateCell = fmtDate(DATA.active_first_seen[i]); // нет даты уведомления - лот ещё не отправлялся, показываем дату появления
+      }
 
-      var rr = retailForLot("fav", i);
+      var rr = retailForLot(prefix, i);
       var retailMedian = rr.median;
       var vsRetail;
       if(!retailMedian){
         vsRetail = "<span style=\"color:var(--ink-muted)\">—</span>";
       } else {
-        var ratio = DATA.fav_price_start[i] / retailMedian;
+        var ratio = priceStart / retailMedian;
         var retailN = rr.n;
         var yearNote = retailYearNote(rr);
         vsRetail = "<span title=\"Розничная цена (Auto.ru), "+yearNote+": "+fmtInt(retailMedian)+" ₽ ("+retailN+" объявлений)\">"
           + fmtPctDelta(ratio) + "</span>";
       }
 
-      var url = "https://torgi.gov.ru/new/public/lots/lot/" + DATA.fav_id[i];
+      var url = "https://torgi.gov.ru/new/public/lots/lot/" + id;
       return "<tr>"
         + "<td class=\"brand\">"+title+"</td>"
-        + yearCellHtml(DATA.fav_id[i], DATA.fav_year[i])
-        + "<td>"+(DATA.fav_region[i] ? escapeHtml(DATA.fav_region[i]) : "—")+"</td>"
-        + "<td class=\"mono\">"+plateCell+"</td>"
+        + yearCellHtml(id, DATA[prefix+"_year"][i])
+        + "<td>"+(DATA[prefix+"_region"][i] ? escapeHtml(DATA[prefix+"_region"][i]) : "—")+"</td>"
+        + thirdCell
         + "<td"+reasonTitle+">"+reasonCell+"</td>"
-        + "<td class=\"mono\">"+fmtDate(DATA.fav_notified_at[i])+"</td>"
-        + "<td class=\"num\">"+(DATA.fav_price_start[i] ? fmtInt(DATA.fav_price_start[i]) : "—")+"</td>"
+        + "<td class=\"mono\">"+dateCell+"</td>"
+        + "<td class=\"num\">"+(priceStart ? fmtInt(priceStart) : "—")+"</td>"
         + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
-        + "<td>"+markBtnHtml(DATA.fav_id[i])+"</td>"
+        + "<td>"+markBtnHtml(id)+"</td>"
         + (extraCell || "")
         + "</tr>";
   }
+  function favRowHtml(i, extraCell){ return lotRowHtml("fav", i, extraCell); }
 
   // ---------- «Избранное» - личные отметки пользователя (звёздочка).
   // Сайт статический (GitHub Pages), сервера нет - отметки лежат в
@@ -1814,28 +1838,38 @@
       + (on ? "★" : "☆") + "</button>";
   }
   function renderMarkedTable(){
-    var idxById = {};
-    for(var i=0;i<DATA.fav_n;i++) idxById[DATA.fav_id[i]] = i;
+    // Отмеченный лот может быть известен по "Уведомлениям Telegram"
+    // (fav_*, больше данных - номер/причины/дата уведомления) и/или по
+    // "Сейчас на торгах" (active_*, лот ещё ни разу не уведомлялся) -
+    // если есть оба, показываем "fav"-версию как более информативную.
+    var favById = {}, activeById = {};
+    for(var i=0;i<DATA.fav_n;i++) favById[DATA.fav_id[i]] = i;
+    for(var j=0;j<DATA.active_n;j++) activeById[DATA.active_id[j]] = j;
     var ids = Object.keys(MARKS_MEM);
-    var idxs = [], missing = 0;
-    ids.forEach(function(id){ if(idxById[id] != null) idxs.push(idxById[id]); else missing++; });
-    idxs.sort(function(a,b){ // недавно отмеченные сверху
-      return (MARKS_MEM[DATA.fav_id[b]].d||"").localeCompare(MARKS_MEM[DATA.fav_id[a]].d||"");
+    var found = [], missing = 0;
+    ids.forEach(function(id){
+      if(favById[id] != null) found.push({id: id, prefix: "fav", i: favById[id]});
+      else if(activeById[id] != null) found.push({id: id, prefix: "active", i: activeById[id]});
+      else missing++;
     });
-    document.getElementById("marked-table").innerHTML = idxs.map(function(i){
-      return favRowHtml(i, notesCellHtml(DATA.fav_id[i]));
+    found.sort(function(a,b){ // недавно отмеченные сверху
+      return (MARKS_MEM[b.id].d||"").localeCompare(MARKS_MEM[a.id].d||"");
+    });
+    document.getElementById("marked-table").innerHTML = found.map(function(f){
+      return lotRowHtml(f.prefix, f.i, notesCellHtml(f.id));
     }).join("");
-    var hint = idxs.length ? fmtInt(idxs.length)+" отмечено" : "пока ничего не отмечено — нажмите ☆ в последней колонке на вкладке «Уведомления Telegram»";
-    if(missing) hint += " · "+missing+" отмеченных лотов уже нет в архиве уведомлений";
+    var hint = found.length ? fmtInt(found.length)+" отмечено" : "пока ничего не отмечено — нажмите ☆ в последней колонке на вкладке «Уведомления Telegram» или «Сейчас на торгах»";
+    if(missing) hint += " · "+missing+" отмеченных лотов уже нет ни в архиве уведомлений, ни в активных торгах";
     document.getElementById("marked-hint").textContent = hint;
     var badge = document.getElementById("tab-marked-count");
-    if(badge) badge.textContent = idxs.length ? " "+fmtInt(idxs.length) : "";
+    if(badge) badge.textContent = found.length ? " "+fmtInt(found.length) : "";
   }
   function onMarkClick(e){
     var btn = e.target.closest(".mark-btn");
     if(!btn) return;
     if(toggleMark(btn.dataset.lotId) === false) return;
     renderFavoritesTable(); // перерисует и таблицу уведомлений, и «Избранное»
+    renderActiveTable();
   }
   // чекбоксы и комментарий сохраняем на месте, БЕЗ перерисовки таблицы -
   // иначе при наборе текста терялся бы фокус
@@ -2217,6 +2251,7 @@
       startSync();
       document.getElementById("favorites-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("click", onMarkClick);
+      document.getElementById("active-table").addEventListener("click", onMarkClick);
       document.getElementById("marked-table").addEventListener("change", onNotesChange);
       document.getElementById("marked-all-cols").addEventListener("change", function(e){
         document.getElementById("tab-marked").classList.toggle("show-all", e.target.checked);
