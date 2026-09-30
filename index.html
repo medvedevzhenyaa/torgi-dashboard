@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Реестр торгов</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -60,7 +61,7 @@
     -webkit-font-smoothing:antialiased;
   }
   .mono{font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums;}
-  .wrap{max-width:1520px; margin:0 auto; padding:28px 24px 64px;}
+  .wrap{margin:0 auto; padding:28px 24px 64px;}
 
   header{margin-bottom:22px;}
   .eyebrow{
@@ -1798,7 +1799,7 @@
   var MARKS_KEY = "torgi_marked_v1";
   var MARKS_MEM = {};
   var CHECKLIST = [
-    ["pledge", "Залог остается"], ["ip", "ИП"], ["ban", "Запреты"],
+    ["pledge", "Залог", "Залог остаётся"], ["ip", "ИП"], ["ban", "Запреты"],
     ["vat", "НДС"], ["keys", "Ключи"], ["docs", "Документы"]
   ];
   function loadMarks(){ loadState(); }
@@ -1824,7 +1825,8 @@
   function notesCellHtml(id){
     var m = MARKS_MEM[id] || {k: {}, t: ""};
     var boxes = CHECKLIST.map(function(c){
-      return "<label class=\"chk\"><input type=\"checkbox\" data-lot-id=\""+escapeHtml(id)+"\" data-key=\""+c[0]+"\""
+      var titleAttr = c[2] ? " title=\""+escapeHtml(c[2])+"\"" : "";
+      return "<label class=\"chk\""+titleAttr+"><input type=\"checkbox\" data-lot-id=\""+escapeHtml(id)+"\" data-key=\""+c[0]+"\""
         + (m.k && m.k[c[0]] ? " checked" : "") + "> "+escapeHtml(c[1]).replace("\n","<br>")+"</label>";
     }).join("");
     return "<td class=\"notes-cell\"><div class=\"chk-grid\">"+boxes+"</div>"
