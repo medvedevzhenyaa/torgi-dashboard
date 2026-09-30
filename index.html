@@ -239,7 +239,7 @@
   @media (max-width: 860px){ .notes-cell{min-width:280px;} }
   .chk input{accent-color:var(--accent); cursor:pointer;}
   .notes-text{
-    width:100%; min-height:44px; resize:vertical; font:inherit; font-size:.85rem;
+    width:100%; min-height:44px; resize:none; overflow:hidden; font:inherit; font-size:.85rem;
     color:var(--ink); background:var(--surface-alt); border:1px solid var(--border);
     border-radius:6px; padding:6px 8px;
   }
@@ -1860,11 +1860,22 @@
     document.getElementById("marked-table").innerHTML = found.map(function(f){
       return lotRowHtml(f.prefix, f.i, notesCellHtml(f.id));
     }).join("");
+    autoGrowAll(document.querySelectorAll("#marked-table .notes-text"));
     var hint = found.length ? fmtInt(found.length)+" отмечено" : "пока ничего не отмечено — нажмите ☆ в последней колонке на вкладке «Уведомления Telegram» или «Сейчас на торгах»";
     if(missing) hint += " · "+missing+" отмеченных лотов уже нет ни в архиве уведомлений, ни в активных торгах";
     document.getElementById("marked-hint").textContent = hint;
     var badge = document.getElementById("tab-marked-count");
     if(badge) badge.textContent = found.length ? " "+fmtInt(found.length) : "";
+  }
+  // Комментарий всегда показан целиком, без внутренней прокрутки -
+  // высота textarea подгоняется под содержимое (при первом рендере и
+  // при каждом нажатии клавиши), а не фиксирована на 2 строки.
+  function autoGrow(el){
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  }
+  function autoGrowAll(list){
+    list.forEach(autoGrow);
   }
   function onMarkClick(e){
     var btn = e.target.closest(".mark-btn");
@@ -1884,6 +1895,7 @@
       MARKS_MEM[id].k[el.dataset.key] = el.checked;
     } else if(el.matches("textarea.notes-text")){
       MARKS_MEM[id].t = el.value;
+      autoGrow(el);
     } else return;
     MARKS_MEM[id].u = Date.now();
     saveMarks();
@@ -2208,6 +2220,12 @@
     // размер после display:none -> resize() достаёт актуальную ширину контейнера
     if(name === "overview"){
       Object.keys(CHARTS).forEach(function(k){ if(CHARTS[k]) CHARTS[k].resize(); });
+    }
+    // комментарии подгонялись под высоту, пока вкладка была скрыта
+    // (display:none -> scrollHeight не измерить) - пересчитываем, когда
+    // вкладка реально стала видна.
+    if(name === "marked"){
+      autoGrowAll(document.querySelectorAll("#marked-table .notes-text"));
     }
   }
   function initTabs(){
