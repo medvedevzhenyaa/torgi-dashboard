@@ -2092,13 +2092,18 @@
     }catch(e){}
   }
   function startSync(){
-    var m = location.hash.match(/^#sync=(.+)$/); // ссылка «для другого устройства» несёт токен во фрагменте (на сервер не уходит)
-    if(m){
+    function takeTokenFromHash(){
+      var m = location.hash.match(/^#sync=(.+)$/); // ссылка «для другого устройства» несёт токен во фрагменте (на сервер не уходит)
+      if(!m) return false;
       try{ setSyncToken(decodeURIComponent(m[1])); }catch(e){}
       history.replaceState(null, "", location.pathname + location.search);
-    } else {
+      return true;
+    }
+    if(!takeTokenFromHash()){
       try{ SYNC.token = localStorage.getItem(SYNC_TOKEN_KEY) || ""; }catch(e){}
     }
+    // страница уже открыта, а ссылку с токеном открыли в той же вкладке - перезагрузки нет, ловим смену фрагмента
+    window.addEventListener("hashchange", function(){ if(takeTokenFromHash()) syncNow(); });
     var input = document.getElementById("sync-token");
     document.getElementById("sync-save").addEventListener("click", function(){
       var v = input.value.trim();
