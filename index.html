@@ -735,13 +735,17 @@
   // зависит от текущих фильтров, иначе "выгоднее медианы" гулял бы
   // при каждой смене фильтра ----------
   var MODEL_BENCHMARK = null;
+  var MODEL_YEAR_PRICES = {}; // марка||модель -> {год: [цены сделок]}
   function buildModelBenchmark(){
-    var groups = {};
+    var groups = {}, byYear = {};
     for(var i=0;i<DATA.n;i++){
       if(DATA.status[i] !== "SUCCEED" || !DATA.price_fin[i] || !DATA.brand[i] || !DATA.model[i]) continue;
       var key = DATA.brand[i] + "||" + DATA.model[i];
       (groups[key] = groups[key] || []).push(DATA.price_fin[i]);
+      var yr = DATA.year[i];
+      if(yr){ var by = (byYear[key] = byYear[key] || {}); (by[yr] = by[yr] || []).push(DATA.price_fin[i]); }
     }
+    MODEL_YEAR_PRICES = byYear;
     var bench = {};
     Object.keys(groups).forEach(function(k){
       if(groups[k].length >= 3) bench[k] = { median: median(groups[k]), n: groups[k].length };
@@ -752,12 +756,26 @@
     if(!brand || !model || !MODEL_BENCHMARK) return null;
     return MODEL_BENCHMARK[brand + "||" + model] || null;
   }
-  // ячейка «Медиана торгов»: медиана реальных цен продажи по марке+модели
-  // из нашей базы (MODEL_BENCHMARK, от 3 продаж); в подсказке - число продаж
-  function torgiMedianCellHtml(brand, model){
-    var bm = getBenchmark(brand, model);
+  // «Медиана торгов»: медиана реальных цен продажи по марке+модели ИЗ НАШЕЙ
+  // базы. Если год лота известен (в данных или вписан вручную) - берём продажи
+  // того же года ±1 (от 3 продаж, как и для Auto.ru), иначе - модель в целом.
+  function torgiBenchmarkForYear(brand, model, year){
+    var all = getBenchmark(brand, model);
+    if(!all) return null;
+    var y = parseInt(year, 10);
+    if(y){
+      var by = MODEL_YEAR_PRICES[brand + "||" + model] || {}, near = [];
+      for(var d=-1; d<=1; d++){ if(by[y+d]) near = near.concat(by[y+d]); }
+      if(near.length >= 3) return {median: median(near), n: near.length, yearMatched: true, year: y};
+    }
+    return {median: all.median, n: all.n, yearMatched: false, year: y || null};
+  }
+  function torgiMedianCellHtml(brand, model, year){
+    var bm = torgiBenchmarkForYear(brand, model, year);
     if(!bm) return "<td class=\"num\">—</td>";
-    return "<td class=\"num\" title=\"Медиана реальных цен продажи на торгах по этой модели: "+bm.n+" продаж\">"+fmtInt(bm.median)+"</td>";
+    var note = bm.yearMatched ? "продажи года "+bm.year+" ±1: "+bm.n
+      : (bm.year ? "продаж года "+bm.year+" ±1 мало — по модели в целом: "+bm.n : "год лота неизвестен — по модели в целом: "+bm.n);
+    return "<td class=\"num\" title=\"Медиана реальных цен продажи на торгах, "+note+"\">"+fmtInt(bm.median)+"</td>";
   }
   // розничный бенчмарк Auto.ru по марке+модели (без разбивки по году) -
   // готовый словарь из data.json, считается один раз в publish_dashboard.py
@@ -1537,7 +1555,7 @@
         + "<td class=\"mono\">"+fmtDate(DATA.active_first_seen[i])+"</td>"
         + "<td class=\"mono\">"+fmtDate(DATA.active_deadline[i])+"</td>"
         + "<td class=\"num\">"+(DATA.active_price_start[i] ? fmtInt(DATA.active_price_start[i]) : "—")+"</td>"
-        + torgiMedianCellHtml(brand, model)
+        + torgiMedianCellHtml(brand, model, DATA.active_year[i] || YEARS_MEM[id])
         + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
@@ -1726,7 +1744,7 @@
         + "<td"+reasonTitle+">"+reasonCell+"</td>"
         + "<td class=\"mono\">"+dateCell+"</td>"
         + "<td class=\"num\">"+(priceStart ? fmtInt(priceStart) : "—")+"</td>"
-        + torgiMedianCellHtml(brand, model)
+        + torgiMedianCellHtml(brand, model, DATA[prefix+"_year"][i] || YEARS_MEM[id])
         + "<td class=\"num\">"+(retailMedian ? fmtInt(retailMedian) : "—")+"</td>"
         + "<td>"+vsRetail+"</td>"
         + "<td><a class=\"lot-link\" href=\""+url+"\" target=\"_blank\" rel=\"noopener noreferrer\">Открыть ↗</a></td>"
