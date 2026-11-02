@@ -1686,7 +1686,7 @@
     else idx.sort(function(a,b){ return (DATA.fav_notified_at[b]||"").localeCompare(DATA.fav_notified_at[a]||""); }); // notified_desc, по умолчанию
     return idx;
   }
-  var FAV_LOTS_CAP = 150;
+  // 02.11.2026: лимита строк нет - список ограничен окном FAV_DAYS, видно всё, что в него попало
   function renderFavoritesTable(){
     var winN = favInWindowIdx().length;
     var c = favCutoff().split("-");
@@ -1695,9 +1695,9 @@
       : "архив ещё не собран - появится после первого уведомления в Telegram";
     var idx = favoritesFilteredIdx();
     var total = idx.length;
-    var shown = idx.slice(0, FAV_LOTS_CAP);
+    var shown = idx;
     document.getElementById("favorites-lots-hint").textContent = total
-      ? "показано "+fmtInt(shown.length)+" из "+fmtInt(total)+" — сузьте фильтры выше, чтобы увидеть остальные"
+      ? "показано "+fmtInt(total)+" — все уведомления за последние "+FAV_DAYS+" дней по текущему фильтру"
       : "нет лотов по текущему фильтру";
     var countBadge = document.getElementById("tab-favorites-count");
     if(countBadge) countBadge.textContent = winN ? " "+fmtInt(winN) : "";
