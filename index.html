@@ -526,10 +526,10 @@
   <div id="tab-favorites" class="tab-panel" hidden>
   <div class="panel full">
     <div class="p-head">
-      <h2 class="p-title">Всё, что когда-либо ушло в Telegram-уведомление</h2>
+      <h2 class="p-title">Telegram-уведомления за последние 7 дней</h2>
       <span class="p-hint" id="favorites-hint">—</span>
     </div>
-    <p class="p-hint" style="margin:6px 0 0;">Список слежения (Audi/Toyota/Volkswagen/Lexus), красивый номер, год по VIN не совпадает с указанным, старт дешевле медианы реальных продаж — те же критерии, что для уведомлений в Telegram. Копится день за днём начиная с 17.09.2026 (в отличие от «Сейчас на торгах») — лот остаётся здесь и после того, как торги завершились.</p>
+    <p class="p-hint" style="margin:6px 0 0;">Список слежения (Audi/Toyota/Volkswagen/Lexus), красивый номер, год по VIN не совпадает с указанным, старт дешевле медианы реальных продаж — те же критерии, что для уведомлений в Telegram. Показаны уведомления за последние 7 дней (сегодня и 6 дней до него); лот остаётся здесь и после того, как торги завершились.</p>
 
     <div class="filters">
       <span class="flabel">Марка</span>
@@ -1644,21 +1644,36 @@
       sort: document.getElementById("ff-sort").value
     };
   }
+  // 02.11.2026 по просьбе пользователя: вкладка показывает уведомления
+  // только за последние FAV_DAYS дней (сегодня + 6 предыдущих). Сам архив
+  // (fav_*) не режется - он нужен вкладке «Избранное», где звёздочка может
+  // стоять на лоте, уведомлённом давно.
+  var FAV_DAYS = 7;
+  function favCutoff(){
+    var d = new Date(); d.setDate(d.getDate() - (FAV_DAYS - 1));
+    var m = d.getMonth()+1, dd = d.getDate();
+    return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd;
+  }
+  function favInWindowIdx(){
+    var c = favCutoff(), out = [];
+    for(var i=0;i<DATA.fav_n;i++) if((DATA.fav_notified_at[i]||"") >= c) out.push(i);
+    return out;
+  }
   function favoritesFilteredIdx(){
     var f = favoritesCurrentFilter();
     var idx = [];
-    for(var i=0;i<DATA.fav_n;i++){
-      if(f.brand && DATA.fav_brand[i] !== f.brand) continue;
-      if(f.model && DATA.fav_model[i] !== f.model) continue;
+    favInWindowIdx().forEach(function(i){
+      if(f.brand && DATA.fav_brand[i] !== f.brand) return;
+      if(f.model && DATA.fav_model[i] !== f.model) return;
       if(f.yearFrom != null || f.yearTo != null){
         var y = DATA.fav_year[i];
-        if(y == null) continue;
-        if(f.yearFrom != null && y < f.yearFrom) continue;
-        if(f.yearTo != null && y > f.yearTo) continue;
+        if(y == null) return;
+        if(f.yearFrom != null && y < f.yearFrom) return;
+        if(f.yearTo != null && y > f.yearTo) return;
       }
-      if(f.tag && (DATA.fav_tags[i]||[]).indexOf(f.tag) === -1) continue;
+      if(f.tag && (DATA.fav_tags[i]||[]).indexOf(f.tag) === -1) return;
       idx.push(i);
-    }
+    });
     function valueRatioFav(i){
       var rm = retailForLot("fav", i).median;
       if(!rm) return Infinity;
@@ -1673,8 +1688,10 @@
   }
   var FAV_LOTS_CAP = 150;
   function renderFavoritesTable(){
+    var winN = favInWindowIdx().length;
+    var c = favCutoff().split("-");
     document.getElementById("favorites-hint").textContent = DATA.fav_n
-      ? fmtInt(DATA.fav_n)+" лотов в архиве уведомлений"
+      ? fmtInt(winN)+" лотов за последние "+FAV_DAYS+" дней (с "+c[2]+"."+c[1]+")"
       : "архив ещё не собран - появится после первого уведомления в Telegram";
     var idx = favoritesFilteredIdx();
     var total = idx.length;
@@ -1683,7 +1700,7 @@
       ? "показано "+fmtInt(shown.length)+" из "+fmtInt(total)+" — сузьте фильтры выше, чтобы увидеть остальные"
       : "нет лотов по текущему фильтру";
     var countBadge = document.getElementById("tab-favorites-count");
-    if(countBadge) countBadge.textContent = DATA.fav_n ? " "+fmtInt(DATA.fav_n) : "";
+    if(countBadge) countBadge.textContent = winN ? " "+fmtInt(winN) : "";
 
     var tbody = document.getElementById("favorites-table");
     tbody.innerHTML = shown.map(function(i){ return favRowHtml(i); }).join("");
